@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { addDefaultWeatherWidgets, blankDashboard, createWidget, formatValue, type DashboardDocument, type DataSource, type Widget, type WidgetType, valueAtPath, weatherTemplate } from "../lib/dashboard";
 import { decryptDocument, encryptDocument, type EncryptedEnvelope } from "../lib/crypto";
 
@@ -13,13 +13,24 @@ function Clock() {
   return <>{now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</>;
 }
 
-function PreviewWidget({ widget, data }: { widget: Widget; data: Record<string, unknown> }) {
+type JsonLeaf = { path: string; value: unknown };
+
+function jsonLeaves(value: unknown, path = "", result: JsonLeaf[] = []): JsonLeaf[] {
+  if (value !== null && typeof value === "object") {
+    const entries = Array.isArray(value) ? value.map((item, index) => [String(index), item] as const) : Object.entries(value as Record<string, unknown>);
+    if (!entries.length) result.push({ path, value });
+    entries.forEach(([key, item]) => jsonLeaves(item, path ? `${path}.${key}` : key, result));
+  } else result.push({ path, value });
+  return result;
+}
+
+function PreviewWidget({ widget, data, selected, onSelect, onDragStart, onDragEnd }: { widget: Widget; data: Record<string, unknown>; selected: boolean; onSelect: () => void; onDragStart: (event: DragEvent<HTMLElement>) => void; onDragEnd: () => void }) {
   let content: React.ReactNode = widget.staticValue ?? widget.title;
   if (widget.type === "clock") content = <Clock />;
   if (widget.type === "image") content = widget.imageUrl ? <img src={widget.imageUrl} alt={widget.title} /> : "Bild-URL fehlt";
   if (widget.type === "value" || widget.type === "weather") content = formatValue(valueAtPath(data[widget.dataSourceId ?? ""], widget.jsonPath), widget.format, widget.suffix);
   return (
-    <article className={`preview-widget animation-${widget.animation ?? "none"}`} style={{ gridColumn: `${widget.x + 1} / span ${widget.width}`, gridRow: `${widget.y + 1} / span ${widget.height}`, background: widget.style.background, color: widget.style.foreground, textAlign: widget.style.align }}>
+    <article draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onSelect} className={`preview-widget animation-${widget.animation ?? "none"}${selected ? " selected-outline" : ""}`} style={{ gridColumn: `${widget.x + 1} / span ${widget.width}`, gridRow: `${widget.y + 1} / span ${widget.height}`, background: widget.style.background, color: widget.style.foreground, textAlign: widget.style.align }}>
       <small>{widget.title}</small>
       <div className="widget-value">{widget.type === "weather" && <span className="weather-icon">☀</span>}{content}</div>
     </article>
@@ -39,6 +50,7 @@ export default function Builder() {
   const [previewData, setPreviewData] = useState<Record<string, unknown>>({});
   const [customTemplates, setCustomTemplates] = useState<{ name: string; document: DashboardDocument }[]>([]);
   const selected = document.widgets.find((item) => item.id === selectedId);
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("display-project");
@@ -108,6 +120,36 @@ export default function Builder() {
   };
 
   const templates = useMemo(() => [{ name: "Leer", create: blankDashboard }, { name: "Wetter", create: () => addDefaultWeatherWidgets(weatherTemplate()) }], []);
+  const mapLeaf = (source: DataSource, leaf: JsonLeaf, create = false) => {
+    if (create || !selected || (selected.type !== "value" && selected.type !== "weather")) {
+      const item = createWidget("value", document.widgets.length);
+      item.title = leaf.path.split(".").at(-1) || source.name;
+      item.dataSourceId = source.id;
+      item.jsonPath = leaf.path;
+      patchDocument({ widgets: [...document.widgets, item] });
+      setSelectedId(item.id);
+    } else patchWidget({ dataSourceId: source.id, jsonPath: leaf.path });
+    setNotice({ kind: "ok", text: `${leaf.path || "Antwort"} ist mit dem Widget verknüpft.` });
+  };
+  const dropOnCanvas = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = Math.max(0, Math.min(document.settings.columns - 1, Math.floor((event.clientX - rect.left) / rect.width * document.settings.columns)));
+    const y = Math.max(0, Math.min(document.settings.rows - 1, Math.floor((event.clientY - rect.top) / rect.height * document.settings.rows)));
+    const widgetId = event.dataTransfer.getData("application/x-display-widget");
+    const widgetType = event.dataTransfer.getData("application/x-display-widget-type") as WidgetType;
+    if (widgetId) {
+      setDocument((current) => ({ ...current, widgets: current.widgets.map((item) => item.id === widgetId ? { ...item, x: Math.min(x, current.settings.columns - item.width), y: Math.min(y, current.settings.rows - item.height) } : item) }));
+      setSelectedId(widgetId);
+    } else if (widgetType) {
+      const item = createWidget(widgetType, document.widgets.length);
+      item.x = Math.min(x, document.settings.columns - item.width);
+      item.y = Math.min(y, document.settings.rows - item.height);
+      patchDocument({ widgets: [...document.widgets, item] });
+      setSelectedId(item.id);
+    }
+    setDragging(false);
+  };
 
   return <main className="builder-shell">
     <header className="topbar">
@@ -129,7 +171,7 @@ export default function Builder() {
         </nav>
         {tab === "widgets" && <div className="panel-content">
           <p className="eyebrow">Bausteine</p><div className="widget-library">
-            {(["text", "clock", "image", "value", "weather"] as WidgetType[]).map((type) => <button key={type} onClick={() => { const item = createWidget(type, document.widgets.length); patchDocument({ widgets: [...document.widgets, item] }); setSelectedId(item.id); }}><span>{type === "text" ? "Tt" : type === "clock" ? "◷" : type === "image" ? "▧" : type === "value" ? "#" : "☀"}</span>{({ text: "Text", clock: "Uhr", image: "Bild", value: "API-Wert", weather: "Wetter" } as const)[type]}</button>)}
+            {(["text", "clock", "image", "value", "weather"] as WidgetType[]).map((type) => <button draggable onDragStart={(event) => { event.dataTransfer.setData("application/x-display-widget-type", type); setDragging(true); }} onDragEnd={() => setDragging(false)} key={type} onClick={() => { const item = createWidget(type, document.widgets.length); patchDocument({ widgets: [...document.widgets, item] }); setSelectedId(item.id); }}><span>{type === "text" ? "Tt" : type === "clock" ? "◷" : type === "image" ? "▧" : type === "value" ? "#" : "☀"}</span>{({ text: "Text", clock: "Uhr", image: "Bild", value: "API-Wert", weather: "Wetter" } as const)[type]}</button>)}
           </div>
           <p className="eyebrow">Ebenen</p><div className="layers">{document.widgets.map((item) => <button className={item.id === selectedId ? "active" : ""} key={item.id} onClick={() => setSelectedId(item.id)}><span>{item.title}</span><small>{item.width}×{item.height}</small></button>)}</div>
         </div>}
@@ -145,6 +187,13 @@ export default function Builder() {
             {source.auth.type === "bearer" && <input type="password" placeholder="Bearer Token" value={source.auth.value ?? ""} onChange={(e) => patchSource(source.id, { auth: { ...source.auth, value: e.target.value } })} />}
             {source.auth.type === "basic" && <div className="inline"><input placeholder="Benutzername" value={source.auth.username ?? ""} onChange={(e) => patchSource(source.id, { auth: { ...source.auth, username: e.target.value } })} /><input type="password" placeholder="Passwort" value={source.auth.password ?? ""} onChange={(e) => patchSource(source.id, { auth: { ...source.auth, password: e.target.value } })} /></div>}
             <button className="text-button" onClick={() => testSource(source)}>Verbindung testen →</button>
+            {Object.prototype.hasOwnProperty.call(previewData, source.id) && <div className="response-mapper">
+              <div className="mapper-heading"><span>API-Antwort</span><small>Feld wählen und visuell zuordnen</small></div>
+              {jsonLeaves(previewData[source.id]).slice(0, 150).map((leaf) => <div className="mapping-row" key={leaf.path}>
+                <button title="Diesem ausgewählten Widget zuordnen" onClick={() => mapLeaf(source, leaf)}><code>{leaf.path || "$"}</code><span>{typeof leaf.value === "string" ? leaf.value : JSON.stringify(leaf.value)}</span></button>
+                <button className="add-mapping" title="Neues API-Wert-Widget erstellen" onClick={() => mapLeaf(source, leaf, true)}>+</button>
+              </div>)}
+            </div>}
           </div>)}
         </div>}
         {tab === "settings" && <div className="panel-content form-stack">
@@ -160,7 +209,7 @@ export default function Builder() {
 
       <section className="canvas-area">
         <div className="canvas-toolbar"><span><i /> Live Preview</span><span>1920 × 1080 · Landscape</span></div>
-        <div className="display-frame"><div className="display-grid" style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>{document.widgets.map((item) => <div key={item.id} className={item.id === selectedId ? "selected-outline" : ""} onClick={() => setSelectedId(item.id)}><PreviewWidget widget={item} data={previewData} /></div>)}</div></div>
+        <div className={`display-frame${dragging ? " is-dragging" : ""}`}><div className="display-grid" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDrop={dropOnCanvas} style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>{document.widgets.map((item) => <PreviewWidget key={item.id} widget={item} data={previewData} selected={item.id === selectedId} onSelect={() => setSelectedId(item.id)} onDragStart={(event) => { event.dataTransfer.setData("application/x-display-widget", item.id); event.dataTransfer.effectAllowed = "move"; setDragging(true); }} onDragEnd={() => setDragging(false)} />)}</div></div>
         {notice && <div className={`notice ${notice.kind}`}>{notice.text}</div>}
         {displayUrl && <div className="share-bar"><span>Client-URL</span><code>{displayUrl}</code><button onClick={() => navigator.clipboard.writeText(displayUrl)}>Kopieren</button></div>}
       </section>

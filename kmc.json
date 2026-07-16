@@ -6,6 +6,7 @@
     { "id": "display.web", "name": "Start web", "command": "npm run dev:web", "group": "display" },
     { "id": "display.backend", "name": "Start backend", "command": "npm run dev:backend", "group": "display" },
     { "id": "display.database", "name": "Start MySQL", "command": "npm run db:up", "group": "display" },
+    { "id": "display.recreate", "name": "Rebuild and recreate Docker stack", "command": "docker compose up -d --build --force-recreate", "group": "display" },
     { "id": "display.check", "name": "Check workspace", "command": "npm run check", "group": "display" },
     { "id": "display.build", "name": "Build workspace", "command": "npm run build", "group": "display" },
     { "id": "display.mobile", "name": "Build Android app", "command": "npm run mobile:build", "group": "display" }
