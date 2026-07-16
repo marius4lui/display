@@ -11,6 +11,7 @@ const app = express();
 const port = Number(process.env.BACKEND_PORT ?? 3001);
 const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? `http://localhost:${port}`;
 const scryptAsync = promisify(scrypt);
+const shortPublicId = () => randomBytes(9).toString("base64url");
 
 app.disable("x-powered-by");
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(",") ?? true }));
@@ -139,7 +140,7 @@ app.get("/api/me", async (request, response, next) => {
 app.post("/api/dashboards", async (request, response, next) => {
   try {
     const envelope = parseEnvelope(request.body?.envelope);
-    const id = randomUUID();
+    const id = shortPublicId();
     const editToken = randomBytes(32).toString("base64url");
     const ownerId = await authenticatedUser(request);
     const connection = await database.getConnection();

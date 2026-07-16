@@ -16,7 +16,7 @@ function Clock() {
 type JsonLeaf = { path: string; value: unknown };
 type ResizeDirection = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 type Placement = { x: number; y: number; width: number; height: number };
-type DragPayload = Placement & ({ kind: "existing"; id: string } | { kind: "new"; widgetType: WidgetType });
+type DragPayload = Placement & { grabX: number; grabY: number } & ({ kind: "existing"; id: string } | { kind: "new"; widgetType: WidgetType });
 
 function jsonLeaves(value: unknown, path = "", result: JsonLeaf[] = []): JsonLeaf[] {
   if (value !== null && typeof value === "object") {
@@ -53,12 +53,15 @@ export default function Builder() {
   const [busy, setBusy] = useState(false);
   const [previewData, setPreviewData] = useState<Record<string, unknown>>({});
   const [customTemplates, setCustomTemplates] = useState<{ name: string; document: DashboardDocument }[]>([]);
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
   const selected = document.widgets.find((item) => item.id === selectedId);
   const [dragging, setDragging] = useState(false);
   const [dragPayload, setDragPayload] = useState<DragPayload | null>(null);
   const [placement, setPlacement] = useState<Placement | null>(null);
 
   useEffect(() => {
+    setPassphrase(localStorage.getItem("display-passphrase") ?? "");
     const saved = localStorage.getItem("display-project");
     if (!saved) return;
     try {
@@ -165,8 +168,8 @@ export default function Builder() {
     event.dataTransfer.dropEffect = "move";
     if (!dragPayload) return;
     const rect = event.currentTarget.getBoundingClientRect();
-    const rawX = Math.floor((event.clientX - rect.left) / rect.width * document.settings.columns);
-    const rawY = Math.floor((event.clientY - rect.top) / rect.height * document.settings.rows);
+    const rawX = Math.floor((event.clientX - rect.left) / rect.width * document.settings.columns) - dragPayload.grabX;
+    const rawY = Math.floor((event.clientY - rect.top) / rect.height * document.settings.rows) - dragPayload.grabY;
     setPlacement({
       x: Math.max(0, Math.min(document.settings.columns - dragPayload.width, rawX)),
       y: Math.max(0, Math.min(document.settings.rows - dragPayload.height, rawY)),
@@ -221,13 +224,13 @@ export default function Builder() {
       <div className="brand"><span className="brand-mark">d</span><div><strong>display</strong><small>Dashboard Studio</small></div></div>
       <input className="dashboard-name" value={document.name} onChange={(event) => patchDocument({ name: event.target.value })} aria-label="Dashboard-Name" />
       <div className="publish-controls">
-        <input type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} placeholder="PIN/Passphrase (min. 8)" />
+        <input type="password" value={passphrase} onChange={(event) => { const value = event.target.value; setPassphrase(value); if (value) localStorage.setItem("display-passphrase", value); else localStorage.removeItem("display-passphrase"); }} placeholder="PIN/Passphrase (min. 8)" title="Wird auf diesem Gerät gespeichert" />
         <button className="button ghost" disabled={busy} onClick={() => save(false)}>Entwurf</button>
         <button className="button primary" disabled={busy} onClick={() => save(true)}>{busy ? "Bitte warten …" : "Veröffentlichen"}</button>
       </div>
     </header>
 
-    <section className="workspace">
+    <section className={`workspace${leftOpen ? "" : " left-collapsed"}${rightOpen ? "" : " right-collapsed"}`}>
       <aside className="sidebar left-panel">
         <nav className="tabs">
           <button className={tab === "widgets" ? "active" : ""} onClick={() => setTab("widgets")}>Widgets</button>
@@ -236,7 +239,7 @@ export default function Builder() {
         </nav>
         {tab === "widgets" && <div className="panel-content">
           <p className="eyebrow">Bausteine</p><div className="widget-library">
-            {(["text", "clock", "image", "value", "weather"] as WidgetType[]).map((type) => <button draggable onDragStart={(event) => { const size = { width: type === "text" ? 6 : 4, height: 2 }; event.dataTransfer.setData("application/x-display-widget-type", type); setDragPayload({ kind: "new", widgetType: type, x: 0, y: 0, ...size }); setDragging(true); }} onDragEnd={finishDrag} key={type} onClick={() => { const item = createWidget(type, document.widgets.length); patchDocument({ widgets: [...document.widgets, item] }); setSelectedId(item.id); }}><span>{type === "text" ? "Tt" : type === "clock" ? "◷" : type === "image" ? "▧" : type === "value" ? "#" : "☀"}</span>{({ text: "Text", clock: "Uhr", image: "Bild", value: "API-Wert", weather: "Wetter" } as const)[type]}</button>)}
+            {(["text", "clock", "image", "value", "weather"] as WidgetType[]).map((type) => <button draggable onDragStart={(event) => { const size = { width: type === "text" ? 6 : 4, height: 2 }; event.dataTransfer.setData("application/x-display-widget-type", type); setDragPayload({ kind: "new", widgetType: type, x: 0, y: 0, grabX: 0, grabY: 0, ...size }); setDragging(true); }} onDragEnd={finishDrag} key={type} onClick={() => { const item = createWidget(type, document.widgets.length); patchDocument({ widgets: [...document.widgets, item] }); setSelectedId(item.id); }}><span>{type === "text" ? "Tt" : type === "clock" ? "◷" : type === "image" ? "▧" : type === "value" ? "#" : "☀"}</span>{({ text: "Text", clock: "Uhr", image: "Bild", value: "API-Wert", weather: "Wetter" } as const)[type]}</button>)}
           </div>
           <p className="eyebrow">Ebenen</p><div className="layers">{document.widgets.map((item) => <button className={item.id === selectedId ? "active" : ""} key={item.id} onClick={() => setSelectedId(item.id)}><span>{item.title}</span><small>{item.width}×{item.height}</small></button>)}</div>
         </div>}
@@ -273,8 +276,8 @@ export default function Builder() {
       </aside>
 
       <section className="canvas-area">
-        <div className="canvas-toolbar"><span><i /> Live Preview</span><span>1920 × 1080 · Landscape</span></div>
-        <div className={`display-frame${dragging ? " is-dragging" : ""}`}><div className="display-grid" onDragOver={dragOverCanvas} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPlacement(null); }} onDrop={dropOnCanvas} style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>{document.widgets.map((item) => <PreviewWidget key={item.id} widget={item} data={previewData} selected={item.id === selectedId} onSelect={() => setSelectedId(item.id)} onDragStart={(event) => { event.dataTransfer.setData("application/x-display-widget", item.id); event.dataTransfer.effectAllowed = "move"; setDragPayload({ kind: "existing", id: item.id, x: item.x, y: item.y, width: item.width, height: item.height }); setDragging(true); }} onDragEnd={finishDrag} onResizeStart={(event, direction) => startResize(event, item, direction)} />)}{placement && <div className="placement-preview" style={{ gridColumn: `${placement.x + 1} / span ${placement.width}`, gridRow: `${placement.y + 1} / span ${placement.height}` }}><span>{placement.width} × {placement.height}</span></div>}</div></div>
+        <div className="canvas-toolbar"><button className="panel-toggle" onClick={() => setLeftOpen((open) => !open)} aria-label="Linke Seitenleiste umschalten">{leftOpen ? "‹" : "›"}<span>Bausteine</span></button><span><i /> Live Preview</span><span>1920 × 1080 · Landscape</span><button className="panel-toggle right" onClick={() => setRightOpen((open) => !open)} aria-label="Rechte Seitenleiste umschalten"><span>Eigenschaften</span>{rightOpen ? "›" : "‹"}</button></div>
+        <div className={`display-frame${dragging ? " is-dragging" : ""}`}><div className="display-grid" onDragOver={dragOverCanvas} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPlacement(null); }} onDrop={dropOnCanvas} style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>{document.widgets.map((item) => <PreviewWidget key={item.id} widget={item} data={previewData} selected={item.id === selectedId} onSelect={() => setSelectedId(item.id)} onDragStart={(event) => { event.dataTransfer.setData("application/x-display-widget", item.id); event.dataTransfer.effectAllowed = "move"; const elementRect = event.currentTarget.getBoundingClientRect(); const gridRect = event.currentTarget.closest(".display-grid")?.getBoundingClientRect(); const cellWidth = (gridRect?.width ?? elementRect.width) / document.settings.columns; const cellHeight = (gridRect?.height ?? elementRect.height) / document.settings.rows; setDragPayload({ kind: "existing", id: item.id, x: item.x, y: item.y, width: item.width, height: item.height, grabX: Math.max(0, Math.min(item.width - 1, Math.floor((event.clientX - elementRect.left) / cellWidth))), grabY: Math.max(0, Math.min(item.height - 1, Math.floor((event.clientY - elementRect.top) / cellHeight))) }); setDragging(true); }} onDragEnd={finishDrag} onResizeStart={(event, direction) => startResize(event, item, direction)} />)}{placement && <div className="placement-preview" style={{ gridColumn: `${placement.x + 1} / span ${placement.width}`, gridRow: `${placement.y + 1} / span ${placement.height}` }}><span>{placement.width} × {placement.height}</span></div>}</div></div>
         {notice && <div className={`notice ${notice.kind}`}>{notice.text}</div>}
         {displayUrl && <div className="share-bar"><span>Client-URL</span><code>{displayUrl}</code><button onClick={() => navigator.clipboard.writeText(displayUrl)}>Kopieren</button></div>}
       </section>
