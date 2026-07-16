@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState, type DragEvent, type PointerEvent as Reac
 import { addDefaultWeatherWidgets, blankDashboard, createWidget, formatValue, type DashboardDocument, type DataSource, type Widget, type WidgetType, valueAtPath, weatherTemplate } from "../lib/dashboard";
 import { decryptDocument, encryptDocument, type EncryptedEnvelope } from "../lib/crypto";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+const API = "";
 type Notice = { kind: "ok" | "error"; text: string } | null;
+type DashboardSummary = { id: string; name: string; activeVersion: number | null; updatedAt: string };
 
 function Clock() {
   const [now, setNow] = useState(new Date());
@@ -54,8 +55,9 @@ export default function Builder() {
   const [tab, setTab] = useState<"widgets" | "data" | "settings">("widgets");
   const [passphrase, setPassphrase] = useState("");
   const [dashboardId, setDashboardId] = useState("");
-  const [editToken, setEditToken] = useState("");
   const [displayUrl, setDisplayUrl] = useState("");
+  const [pairingCode, setPairingCode] = useState("");
+  const [dashboards, setDashboards] = useState<DashboardSummary[]>([]);
   const [notice, setNotice] = useState<Notice>(null);
   const [busy, setBusy] = useState(false);
   const [previewData, setPreviewData] = useState<Record<string, unknown>>({});
@@ -74,11 +76,19 @@ export default function Builder() {
     const saved = localStorage.getItem("display-project");
     if (!saved) return;
     try {
-      const project = JSON.parse(saved) as { dashboardId: string; editToken: string; displayUrl: string };
-      setDashboardId(project.dashboardId); setEditToken(project.editToken); setDisplayUrl(project.displayUrl);
+      const project = JSON.parse(saved) as { dashboardId: string; displayUrl: string };
+      setDashboardId(project.dashboardId); setDisplayUrl(project.displayUrl);
     } catch { localStorage.removeItem("display-project"); }
     try { setCustomTemplates(JSON.parse(localStorage.getItem("display-templates") ?? "[]")); } catch { localStorage.removeItem("display-templates"); }
   }, []);
+
+  useEffect(() => {
+    fetch("/api/dashboards").then(async (response) => {
+      if (!response.ok) return;
+      const result = await response.json() as { dashboards: DashboardSummary[] }; setDashboards(result.dashboards);
+      if (dashboardId && !result.dashboards.some((item) => item.id === dashboardId)) { setDashboardId(""); setDisplayUrl(""); localStorage.removeItem("display-project"); }
+    });
+  }, [dashboardId]);
 
   const patchDocument = (patch: Partial<DashboardDocument>) => setDocument((current) => ({ ...current, ...patch }));
   const patchWidget = (patch: Partial<Widget>) => setDocument((current) => ({ ...current, widgets: current.widgets.map((item) => item.id === selectedId ? { ...item, ...patch } : item) }));
@@ -89,21 +99,22 @@ export default function Builder() {
     setNotice(null); setBusy(true);
     try {
       const envelope = await encryptDocument(document, passphrase);
-      let id = dashboardId; let token = editToken; let url = displayUrl;
+      let id = dashboardId; let url = displayUrl;
       if (!id) {
         const response = await fetch(`${API}/api/dashboards`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ envelope }) });
-        if (!response.ok) throw new Error((await response.json()).error ?? "Dashboard konnte nicht erstellt werden");
-        const result = await response.json() as { id: string; editToken: string; displayUrl: string };
-        id = result.id; token = result.editToken; url = result.displayUrl;
-        setDashboardId(id); setEditToken(token); setDisplayUrl(url);
-        localStorage.setItem("display-project", JSON.stringify({ dashboardId: id, editToken: token, displayUrl: url }));
+        if (!response.ok) throw new Error((await response.json()).error?.message ?? "Dashboard konnte nicht erstellt werden");
+        const result = await response.json() as { id: string; displayUrl: string };
+        id = result.id; url = result.displayUrl;
+        setDashboardId(id); setDisplayUrl(url);
+        setDashboards((current) => [{ id, name: document.name, activeVersion: null, updatedAt: new Date().toISOString() }, ...current]);
+        localStorage.setItem("display-project", JSON.stringify({ dashboardId: id, displayUrl: url }));
       } else {
-        const response = await fetch(`${API}/api/dashboards/${id}/draft`, { method: "PUT", headers: { "Content-Type": "application/json", "X-Edit-Token": token }, body: JSON.stringify({ envelope }) });
-        if (!response.ok) throw new Error((await response.json()).error ?? "Entwurf konnte nicht gespeichert werden");
+        const response = await fetch(`${API}/api/dashboards/${id}/draft`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ envelope, name: document.name }) });
+        if (!response.ok) throw new Error((await response.json()).error?.message ?? "Entwurf konnte nicht gespeichert werden");
       }
       if (publish) {
-        const response = await fetch(`${API}/api/dashboards/${id}/publish`, { method: "POST", headers: { "X-Edit-Token": token } });
-        if (!response.ok) throw new Error((await response.json()).error ?? "Veröffentlichung fehlgeschlagen");
+        const response = await fetch(`${API}/api/dashboards/${id}/publish`, { method: "POST" });
+        if (!response.ok) throw new Error((await response.json()).error?.message ?? "Veröffentlichung fehlgeschlagen");
         const result = await response.json() as { version: number };
         setNotice({ kind: "ok", text: `Version ${result.version} ist live.` });
       } else setNotice({ kind: "ok", text: "Verschlüsselter Entwurf gespeichert." });
@@ -114,14 +125,33 @@ export default function Builder() {
   const loadDraft = async () => {
     setBusy(true); setNotice(null);
     try {
-      if (!dashboardId || !editToken || !passphrase) throw new Error("Projekt, Bearbeitungsschlüssel oder PIN fehlt.");
-      const response = await fetch(`${API}/api/dashboards/${dashboardId}/draft`, { headers: { "X-Edit-Token": editToken } });
-      if (!response.ok) throw new Error((await response.json()).error ?? "Entwurf konnte nicht geladen werden");
+      if (!dashboardId || !passphrase) throw new Error("Projekt oder PIN fehlt.");
+      const response = await fetch(`${API}/api/dashboards/${dashboardId}/draft`);
+      if (!response.ok) throw new Error((await response.json()).error?.message ?? "Entwurf konnte nicht geladen werden");
       const result = await response.json() as { envelope: EncryptedEnvelope };
       const loaded = await decryptDocument<DashboardDocument>(result.envelope, passphrase);
       setDocument(loaded); setSelectedId(loaded.widgets[0]?.id ?? ""); setNotice({ kind: "ok", text: "Entwurf entschlüsselt und geladen." });
     } catch (error) { setNotice({ kind: "error", text: error instanceof Error ? error.message : "Entschlüsselung fehlgeschlagen" }); }
     finally { setBusy(false); }
+  };
+
+  const createPairing = async () => {
+    if (!dashboardId) return setNotice({ kind: "error", text: "Dashboard zuerst speichern." });
+    const response = await fetch(`/api/dashboards/${dashboardId}/pairings`, { method: "POST" }); const result = await response.json();
+    if (!response.ok) return setNotice({ kind: "error", text: result.error?.message ?? "Pairing fehlgeschlagen" });
+    setPairingCode(result.code); setNotice({ kind: "ok", text: `Pairing-Code ${result.code} ist 10 Minuten gültig.` });
+  };
+
+  const selectDashboard = (id: string) => {
+    if (!id) { setDashboardId(""); setDisplayUrl(""); setPairingCode(""); setDocument(blankDashboard()); localStorage.removeItem("display-project"); return; }
+    const url = `${location.origin}/d/${id}`; setDashboardId(id); setDisplayUrl(url); setPairingCode(""); localStorage.setItem("display-project", JSON.stringify({ dashboardId: id, displayUrl: url }));
+  };
+
+  const deleteDashboard = async () => {
+    if (!dashboardId || !confirm("Dashboard einschließlich aller Versionen und Geräte wirklich löschen?")) return;
+    const response = await fetch(`/api/dashboards/${dashboardId}`, { method: "DELETE" });
+    if (!response.ok) return setNotice({ kind: "error", text: "Dashboard konnte nicht gelöscht werden." });
+    setDashboards((items) => items.filter((item) => item.id !== dashboardId)); selectDashboard(""); setNotice({ kind: "ok", text: "Dashboard gelöscht." });
   };
 
   const testSource = async (source: DataSource) => {
@@ -274,13 +304,14 @@ export default function Builder() {
           </div>)}
         </div>}
         {tab === "settings" && <div className="panel-content form-stack">
+          <p className="eyebrow">Meine Displays</p><select value={dashboardId} onChange={(event) => selectDashboard(event.target.value)}><option value="">Neues Dashboard</option>{dashboards.map((item) => <option value={item.id} key={item.id}>{item.name}{item.activeVersion ? ` · v${item.activeVersion}` : " · Entwurf"}</option>)}</select>
           <label>Konfigurationsprüfung (Sek.)<input type="number" min="10" value={document.settings.configPollSeconds} onChange={(e) => patchDocument({ settings: { ...document.settings, configPollSeconds: Number(e.target.value) } })} /></label>
           <label>Daten-Standard (Sek.)<input type="number" min="10" value={document.settings.dataPollSeconds} onChange={(e) => patchDocument({ settings: { ...document.settings, dataPollSeconds: Number(e.target.value) } })} /></label>
           <label>Hintergrund<input type="color" value={document.settings.background} onChange={(e) => patchDocument({ settings: { ...document.settings, background: e.target.value } })} /></label>
           <p className="eyebrow">Vorlagen</p>{templates.map((template) => <button className="template" key={template.name} onClick={() => { const next = template.create(); setDocument(next); setSelectedId(next.widgets[0]?.id ?? ""); }}>{template.name}</button>)}
           {customTemplates.map((template, index) => <button className="template" key={`${template.name}-${index}`} onClick={() => { const next = structuredClone(template.document); next.widgets.forEach((item) => { item.id=crypto.randomUUID(); }); next.dataSources.forEach((item) => { const old=item.id; item.id=crypto.randomUUID(); next.widgets.filter((widget) => widget.dataSourceId===old).forEach((widget) => { widget.dataSourceId=item.id; }); item.auth={type:"none"}; }); setDocument(next); setSelectedId(next.widgets[0]?.id ?? ""); }}>{template.name} · eigen</button>)}
           <button className="text-button" onClick={() => { const clean=structuredClone(document); clean.dataSources.forEach((source) => { source.auth={type:"none"}; }); const next=[...customTemplates,{name:document.name,document:clean}]; setCustomTemplates(next); localStorage.setItem("display-templates",JSON.stringify(next)); setNotice({kind:"ok",text:"Template ohne Zugangsdaten gespeichert."}); }}>Aktuelles Dashboard als Template speichern →</button>
-          {dashboardId && <><p className="eyebrow">Projekt</p><code>{dashboardId}</code><button className="text-button" onClick={loadDraft}>Entwurf neu laden</button></>}
+          {dashboardId && <><p className="eyebrow">Projekt</p><code>{dashboardId}</code><button className="text-button" onClick={loadDraft}>Entwurf mit aktueller Passphrase laden</button><button className="button wide" onClick={createPairing}>Android koppeln</button>{pairingCode && <><small>10 Minuten gültiger Code</small><code>{pairingCode}</code></>}<button className="danger-button" onClick={deleteDashboard}>Dashboard löschen</button></>}
         </div>}
       </aside>
 

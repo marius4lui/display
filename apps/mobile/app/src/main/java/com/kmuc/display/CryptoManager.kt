@@ -39,11 +39,13 @@ class SecureStore(private val context: android.content.Context) {
         }
     }
 
-    fun saveConnection(url: String, passphrase: String, configPollOverride: Int?, dataPollOverride: Int?) {
+    fun saveConnection(url: String, deviceToken: String, passphrase: String, configPollOverride: Int?, dataPollOverride: Int?) {
         val changedUrl = preferences.getString("url", null) != url
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val encrypted = cipher.doFinal(passphrase.toByteArray(StandardCharsets.UTF_8))
-        preferences.edit().putString("url", url).putString("secret", Base64.encodeToString(encrypted, Base64.NO_WRAP)).putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP)).putInt("config_poll", configPollOverride ?: 0).putInt("data_poll", dataPollOverride ?: 0).also { if (changedUrl) it.remove("etag").remove("cached_envelope") }.apply()
+        val tokenCipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
+        val encryptedToken = tokenCipher.doFinal(deviceToken.toByteArray(StandardCharsets.UTF_8))
+        preferences.edit().putString("url", url).putString("secret", Base64.encodeToString(encrypted, Base64.NO_WRAP)).putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP)).putString("device_token", Base64.encodeToString(encryptedToken, Base64.NO_WRAP)).putString("device_token_iv", Base64.encodeToString(tokenCipher.iv, Base64.NO_WRAP)).putInt("config_poll", configPollOverride ?: 0).putInt("data_poll", dataPollOverride ?: 0).also { if (changedUrl) it.remove("etag").remove("cached_envelope") }.apply()
     }
 
     fun url(): String? = preferences.getString("url", null)
@@ -52,6 +54,12 @@ class SecureStore(private val context: android.content.Context) {
     fun passphrase(): String? = try {
         val encrypted = Base64.decode(preferences.getString("secret", null), Base64.DEFAULT)
         val iv = Base64.decode(preferences.getString("iv", null), Base64.DEFAULT)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, iv)) }
+        String(cipher.doFinal(encrypted), StandardCharsets.UTF_8)
+    } catch (_: Exception) { null }
+    fun deviceToken(): String? = try {
+        val encrypted = Base64.decode(preferences.getString("device_token", null), Base64.DEFAULT)
+        val iv = Base64.decode(preferences.getString("device_token_iv", null), Base64.DEFAULT)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, iv)) }
         String(cipher.doFinal(encrypted), StandardCharsets.UTF_8)
     } catch (_: Exception) { null }

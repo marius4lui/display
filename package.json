@@ -3,21 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "apps/web",
-    "apps/backend"
+    "apps/web"
   ],
   "scripts": {
-    "dev": "concurrently -n web,backend -c blue,green \"npm run dev:web\" \"npm run dev:backend\"",
+    "dev": "npm run dev:web",
     "dev:web": "npm run dev --workspace=@display/web",
-    "dev:backend": "npm run dev --workspace=@display/backend",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check": "npm run typecheck",
     "test": "npm run test --workspaces --if-present",
-    "db:up": "docker compose up -d mysql",
-    "db:down": "docker compose down",
-    "db:logs": "docker compose logs -f mysql",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:reset": "supabase db reset",
+    "supabase:status": "supabase status",
     "mobile:build": "cd apps/mobile && ./gradlew assembleDebug"
   },
   "devDependencies": {

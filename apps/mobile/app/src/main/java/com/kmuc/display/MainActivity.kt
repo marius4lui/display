@@ -77,7 +77,7 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 DisposableEffect(Unit) { controller.start(scope); onDispose { } }
                 Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF090B12)) {
-                    if (controller.configured) DashboardScreen(controller) else SetupScreen { url, secret, configPoll, dataPoll -> controller.configure(url, secret, configPoll, dataPoll, scope) }
+                    if (controller.configured) DashboardScreen(controller) else SetupScreen { url, code, secret, configPoll, dataPoll -> controller.configure(url, code, secret, configPoll, dataPoll, scope) }
                 }
             }
         }
@@ -98,9 +98,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun SetupScreen(onConnect: (String, String, Int?, Int?) -> Unit) {
+private fun SetupScreen(onConnect: (String, String, String, Int?, Int?) -> Unit) {
     var url by remember { mutableStateOf(BuildConfig.API_URL + "/d/") }
     var secret by remember { mutableStateOf("") }
+    var pairingCode by remember { mutableStateOf("") }
     var configPoll by remember { mutableStateOf("") }
     var dataPoll by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -133,6 +134,7 @@ private fun SetupScreen(onConnect: (String, String, Int?, Int?) -> Unit) {
             Text("Dashboard verbinden", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
             Text("Trage die veröffentlichte URL und deine PIN/Passphrase einmalig ein. Die Daten werden nur auf diesem Gerät entschlüsselt.", color = Color(0xFFA7ABBA), fontSize = 13.sp)
             OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth(), label = { Text("Dashboard-URL") }, singleLine = true)
+            OutlinedTextField(pairingCode, { pairingCode = it.filter(Char::isDigit).take(6) }, Modifier.fillMaxWidth(), label = { Text("6-stelliger Pairing-Code") }, singleLine = true)
             OutlinedTextField(secret, { secret = it }, Modifier.fillMaxWidth(), label = { Text("PIN/Passphrase") }, singleLine = true)
             if (compact) {
                 OutlinedTextField(configPoll, { configPoll = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Konfig.-Polling (optional)") }, singleLine = true)
@@ -142,7 +144,7 @@ private fun SetupScreen(onConnect: (String, String, Int?, Int?) -> Unit) {
                 OutlinedTextField(dataPoll, { dataPoll = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("Daten-Polling (optional)") }, singleLine = true)
             }
             error?.let { Text(it, color = Color(0xFFFF8799), fontSize = 12.sp) }
-            Button(onClick = { try { onConnect(url, secret, configPoll.toIntOrNull(), dataPoll.toIntOrNull()); error = null } catch (exception: Exception) { error = exception.message } }, modifier = Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C5CFF))) { Text("Sicher verbinden") }
+            Button(onClick = { try { require(pairingCode.length == 6) { "Bitte den 6-stelligen Pairing-Code eingeben." }; onConnect(url, pairingCode, secret, configPoll.toIntOrNull(), dataPoll.toIntOrNull()); error = null } catch (exception: Exception) { error = exception.message } }, modifier = Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C5CFF))) { Text("Sicher verbinden") }
         }
     }
 }

@@ -2,14 +2,12 @@
   "version": 1,
   "commands": [
     { "id": "display.install", "name": "Install dependencies", "command": "npm install", "group": "display" },
-    { "id": "display.dev", "name": "Start web and backend", "command": "npm run dev", "group": "display" },
-    { "id": "display.web", "name": "Start web", "command": "npm run dev:web", "group": "display" },
-    { "id": "display.backend", "name": "Start backend", "command": "npm run dev:backend", "group": "display" },
-    { "id": "display.database", "name": "Start MySQL", "command": "npm run db:up", "group": "display" },
-    { "id": "display.recreate", "name": "Rebuild and recreate Docker stack", "command": "docker compose up -d --build --force-recreate", "group": "display" },
-    { "id": "display.hotrestart", "name": "Hot restart stack and show logs", "command": "kmc run hotrestart", "group": "display" },
-    { "id": "display.check", "name": "Check workspace", "command": "npm run check", "group": "display" },
-    { "id": "display.build", "name": "Build workspace", "command": "npm run build", "group": "display" },
-    { "id": "display.mobile", "name": "Build Android app", "command": "npm run mobile:build", "group": "display" }
+    { "id": "display.dev", "name": "Start Next.js", "command": "npm run dev", "group": "display" },
+    { "id": "display.supabase", "name": "Start local Supabase", "command": "npm run supabase:start", "group": "display" },
+    { "id": "display.reset", "name": "Reset local Supabase", "command": "npm run supabase:reset", "group": "display" },
+    { "id": "display.check", "name": "Type-check workspace", "command": "npm run check", "group": "display" },
+    { "id": "display.build", "name": "Build web", "command": "npm run build", "group": "display" },
+    { "id": "display.mobile", "name": "Build Android app", "command": "npm run mobile:build", "group": "display" },
+    { "id": "display.recreate", "name": "Rebuild Next.js container", "command": "docker compose up -d --build --force-recreate", "group": "display" }
   ]
 }

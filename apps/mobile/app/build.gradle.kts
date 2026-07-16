@@ -23,7 +23,7 @@ android {
 
     buildTypes {
         debug {
-            buildConfigField("String", "API_URL", "\"http://10.0.2.2:3001\"")
+            buildConfigField("String", "API_URL", "\"http://10.0.2.2:3000\"")
         }
         release {
             isMinifyEnabled = false

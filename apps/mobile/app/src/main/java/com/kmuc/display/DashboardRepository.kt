@@ -28,17 +28,24 @@ class DashboardController(context: Context) {
     var dashboard by mutableStateOf<DashboardDocument?>(null); private set
     var status by mutableStateOf("Nicht verbunden"); private set
     var version by mutableStateOf(0); private set
-    var configured by mutableStateOf(store.url() != null && store.passphrase() != null); private set
+    var configured by mutableStateOf(store.url() != null && store.passphrase() != null && store.deviceToken() != null); private set
     val values = mutableStateMapOf<String, RuntimeValue>()
     private val sourceLastRun = ConcurrentHashMap<String, Long>()
     private var job: Job? = null
 
-    fun configure(url: String, passphrase: String, configPollOverride: Int?, dataPollOverride: Int?, scope: CoroutineScope) {
+    fun configure(url: String, pairingCode: String, passphrase: String, configPollOverride: Int?, dataPollOverride: Int?, scope: CoroutineScope) {
         require(url.startsWith("http://") || url.startsWith("https://")) { "Bitte eine vollständige HTTP(S)-URL eingeben." }
         require(passphrase.length >= 8) { "PIN/Passphrase muss mindestens 8 Zeichen lang sein." }
-        store.saveConnection(url.trim(), passphrase, configPollOverride, dataPollOverride)
-        configured = true
-        start(scope)
+        require(pairingCode.matches(Regex("\\d{6}"))) { "Pairing-Code muss 6-stellig sein." }
+        status = "Gerät wird gekoppelt …"
+        scope.launch {
+            try {
+                val token = pair(url.trim(), pairingCode)
+                store.saveConnection(url.trim(), token, passphrase, configPollOverride, dataPollOverride)
+                configured = true
+                start(scope)
+            } catch (error: Exception) { status = "Pairing fehlgeschlagen · ${error.userMessage()}" }
+        }
     }
 
     fun start(scope: CoroutineScope) {
@@ -137,10 +144,22 @@ class DashboardController(context: Context) {
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.connectTimeout = 10_000; connection.readTimeout = 15_000
         if (etag != null) connection.setRequestProperty("If-None-Match", etag)
+        connection.setRequestProperty("Authorization", "Bearer ${store.deviceToken().orEmpty()}")
         val code = connection.responseCode
         if (code == HttpURLConnection.HTTP_NOT_MODIFIED) return@withContext HttpResult(code, "", etag)
         if (code !in 200..299) throw IllegalStateException("HTTP $code")
         HttpResult(code, connection.inputStream.bufferedReader().use { it.readText() }, connection.getHeaderField("ETag"))
+    }
+
+    private suspend fun pair(displayUrl: String, code: String): String = withContext(Dispatchers.IO) {
+        val parsed = URL(displayUrl); val displayId = parsed.path.trimEnd('/').substringAfterLast('/');
+        val endpoint = URL("${parsed.protocol}://${parsed.authority}/api/device/pair")
+        val connection = endpoint.openConnection() as HttpURLConnection
+        connection.requestMethod = "POST"; connection.doOutput = true; connection.connectTimeout = 10_000; connection.readTimeout = 15_000
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.outputStream.use { it.write(JSONObject().put("displayId", displayId).put("code", code).put("name", android.os.Build.MODEL).toString().toByteArray()) }
+        if (connection.responseCode !in 200..299) throw IllegalStateException("HTTP ${connection.responseCode}")
+        JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).getString("deviceToken")
     }
 }
 

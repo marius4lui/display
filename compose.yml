@@ -1,52 +1,16 @@
 services:
-  mysql:
-    image: mysql:8.4
-    container_name: display
-    restart: unless-stopped
-    environment:
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-display}
-      MYSQL_USER: ${MYSQL_USER:-display}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-display}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-display}
-    ports:
-      - "${MYSQL_PORT:-3306}:3306"
-    volumes:
-      - display_mysql:/var/lib/mysql
-      - ./packages/database/migrations:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-udisplay", "-p${MYSQL_PASSWORD:-display}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  backend:
-    build:
-      context: .
-      dockerfile: apps/backend/Dockerfile
-    restart: unless-stopped
-    environment:
-      BACKEND_PORT: 3001
-      DATABASE_URL: mysql://${MYSQL_USER:-display}:${MYSQL_PASSWORD:-display}@mysql:3306/${MYSQL_DATABASE:-display}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3001}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
-    ports:
-      - "${BACKEND_PUBLIC_PORT:-3001}:3001"
-    depends_on:
-      mysql:
-        condition: service_healthy
-
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
     restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
     ports:
       - "${WEB_PORT:-3000}:3000"
-    depends_on:
-      - backend
 
-volumes:
-  display_mysql:
-    name: display
+# Supabase itself is operated with the official self-hosted Supabase stack.
+# For local development use `npm run supabase:start`.

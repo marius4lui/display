@@ -1,81 +1,82 @@
 # display
 
-`display` erstellt verschlüsselte, lokal gerenderte Android-Dashboards. Der Next.js-Builder veröffentlicht nur Ciphertext; URL und PIN/Passphrase werden einmalig im Android-Client eingetragen. API-Aufrufe laufen anschließend direkt auf dem Gerät und können daher auch Dienste im lokalen Netzwerk erreichen.
+`display` erstellt Ende-zu-Ende-verschlüsselte Android-Dashboards. Next.js liefert Studio und API; eine selbst gehostete Supabase-Instanz übernimmt PostgreSQL und E-Mail/Passwort-Accounts. Ein separater Backend-Dienst und MySQL werden nicht benötigt.
 
-## Enthalten
+Der Browser verschlüsselt Dashboard-Dokumente per AES-256-GCM. Android entschlüsselt lokal, führt konfigurierte Datenquellen direkt auf dem Gerät aus und hält den letzten gültigen Stand offline. Supabase und Next.js sehen keine Passphrase und nur Ciphertext.
 
-- Visueller Landscape-Builder mit 12×8-Raster, Live-Preview, Text, Bild, Uhr, API-Wert und Wetter
-- REST-Datenquellen mit allen üblichen Methoden, Headern, JSON-Body, API-Key, Bearer und Basic Auth
-- JSON-Pfad-Mapping, Zahlen-/Datumsformatierung, Animationen und Fehlerstrategien
-- Mitgelieferte und eigene Templates; eigene Templates übernehmen keine Credentials
-- Ende-zu-Ende-verschlüsselte Entwürfe und unveränderliche Veröffentlichungen
-- Stabile Client-URL, ETag-basierte Versionsprüfung, Versionsverlauf und Rollback-API
-- Anonyme Bearbeitungstokens sowie Konto-, Session- und Claim-API
-- Android-Renderer mit Keystore, Offline-Cache, globalem/lokalem Polling und letztem gültigen Stand
-- Gemeinsamer Managed-/Self-hosted-Kern über Docker Compose
+## Voraussetzungen
+
+- Node.js 22+
+- Docker
+- Supabase CLI
+- Für Android: JDK 17 und Android SDK 35
 
 ## Lokal entwickeln
 
-Voraussetzungen sind Node.js 22+, Docker sowie für Android JDK 17 und Android SDK 35.
-
 ```bash
-cp .env.example .env
-kmc run display.install
-kmc run display.database
-kmc run display.dev
+cp .env.example .env.local
+npm install
+npm run supabase:start
 ```
 
-Builder: `http://localhost:3000`
-
-Backend: `http://localhost:3001`
-
-Healthcheck: `http://localhost:3001/health`
-
-Falls Port 3306 bereits belegt ist, in `.env` beispielsweise `MYSQL_PORT=3307` setzen und `DATABASE_URL` entsprechend anpassen.
-
-## Self-hosting
+Die vom CLI ausgegebenen `API URL`, `anon key` und `service_role key` in `.env.local` eintragen. Danach:
 
 ```bash
-cp .env.example .env
-docker compose up -d --build
+npm run supabase:reset
+npm run dev
 ```
 
-Für Produktion müssen mindestens Datenbankpasswörter, `PUBLIC_BASE_URL`, `NEXT_PUBLIC_API_URL` und `CORS_ORIGIN` angepasst sowie TLS vor Web und Backend geschaltet werden. `NEXT_PUBLIC_API_URL` ist eine Build-Time-Variable; nach einer Änderung muss das Web-Image neu gebaut werden.
-
-MySQL führt `packages/database/migrations/001_initial.sql` nur beim ersten Erstellen des Volumes aus. Bei einem bereits vorhandenen Entwicklungsvolume ist ein bewusster Reset mit `docker compose down -v` nötig; dabei werden alle lokalen Daten gelöscht.
+Studio und API laufen unter `http://localhost:3000`. Supabase Studio läuft standardmäßig unter `http://localhost:54323`.
 
 ## Ablauf
 
-1. Dashboard gestalten und eine mindestens acht Zeichen lange PIN/Passphrase setzen.
-2. Entwurf speichern oder veröffentlichen. Der Browser verschlüsselt das Dokument per AES-256-GCM; der Server erhält nur Ciphertext und technische Versionsdaten.
-3. Die angezeigte `/d/{id}`-URL und dieselbe Passphrase in Android eintragen.
-4. Android entschlüsselt lokal, speichert die Passphrase Keystore-geschützt und behält die letzte gültige Konfiguration offline.
+1. Account mit E-Mail und mindestens zehn Zeichen langem Passwort erstellen. In der vorgesehenen Self-hosted-Konfiguration ist keine E-Mail-Bestätigung nötig.
+2. Dashboard gestalten und eine mindestens acht Zeichen lange Passphrase setzen.
+3. Entwurf speichern und veröffentlichen. Next.js speichert den verschlüsselten Envelope in Supabase.
+4. Unter **Setup → Android koppeln** einen sechsstelligen, zehn Minuten gültigen Einmalcode erzeugen.
+5. `/d/{id}`-URL, Pairing-Code und Passphrase in Android eingeben.
+6. Android speichert Geräte-Token und Passphrase Keystore-geschützt. Die Freigabe kann im Account widerrufen werden.
 
-Es gibt keine PIN-Wiederherstellung. Ohne die aktuelle Passphrase kann der Inhalt nicht entschlüsselt werden. Kurze oder leicht erratbare Geheimnisse bleiben trotz PBKDF2 anfällig für Offline-Versuche.
+Ohne Passphrase ist keine Wiederherstellung möglich. Das Pairing-Token ersetzt die Passphrase nicht, sondern kontrolliert nur den Zugriff auf den Ciphertext.
+
+## Self-hosting
+
+Für Produktion wird die [offizielle selbst gehostete Supabase-Distribution](https://supabase.com/docs/guides/self-hosting/docker) separat betrieben. Vor dem Start der Web-Anwendung müssen die SQL-Migrationen aus `supabase/migrations` angewendet und E-Mail-Bestätigungen in GoTrue deaktiviert werden.
+
+Die Web-Anwendung benötigt ausschließlich:
+
+```dotenv
+SUPABASE_URL=https://supabase.example.org
+SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+WEB_PORT=3000
+```
+
+`SUPABASE_SERVICE_ROLE_KEY` ist ausschließlich serverseitig erlaubt. TLS ist vor Next.js und Supabase Pflicht. `docker compose up -d --build` startet nur die Web-Anwendung und verbindet sie mit der bereits laufenden Supabase-Installation.
 
 ## API-Kern
 
+Account-Routen verwenden sichere HttpOnly-Session-Cookies. Geräte verwenden ein widerrufbares Bearer-Token.
+
 | Methode | Pfad | Zweck |
 | --- | --- | --- |
-| `POST` | `/api/dashboards` | Verschlüsselten Entwurf anlegen |
-| `GET/PUT` | `/api/dashboards/:id/draft` | Entwurf mit `X-Edit-Token` lesen/speichern |
-| `POST` | `/api/dashboards/:id/publish` | Unveränderliche Version veröffentlichen |
-| `GET` | `/d/:id` | Aktive Version öffentlich als Ciphertext abrufen |
-| `GET` | `/api/dashboards/:id/versions` | Versionsverlauf abrufen |
-| `POST` | `/api/dashboards/:id/versions/:version/activate` | Rollback/Aktivierung |
-| `POST` | `/api/auth/register`, `/api/auth/login` | Konten und 30-Tage-Sessions |
-| `POST` | `/api/dashboards/:id/claim` | Anonymes Dashboard einem Konto zuordnen |
-
-Kontoinhaber können statt `X-Edit-Token` ein `Authorization: Bearer …` verwenden. Secrets, Passphrases und Authorization-Header dürfen nicht protokolliert werden.
+| `POST` | `/api/auth/register`, `/api/auth/login`, `/api/auth/logout` | Account und Session |
+| `GET/POST` | `/api/dashboards` | Eigene Displays auflisten/anlegen |
+| `GET/PUT` | `/api/dashboards/{id}/draft` | Verschlüsselten Entwurf lesen/speichern |
+| `POST` | `/api/dashboards/{id}/publish` | Unveränderliche Version veröffentlichen |
+| `GET` | `/api/dashboards/{id}/versions` | Versionsverlauf |
+| `POST` | `/api/dashboards/{id}/versions/{version}/activate` | Version aktivieren |
+| `POST` | `/api/dashboards/{id}/pairings` | Einmaligen Pairing-Code erzeugen |
+| `POST` | `/api/device/pair` | Pairing-Code gegen Geräte-Token tauschen |
+| `GET` | `/d/{id}` | Aktive Version mit Geräte-Token und ETag abrufen |
 
 ## Prüfungen
 
 ```bash
-kmc run display.check
-npm test
-kmc run display.build
-kmc run display.mobile
-kmc run checks --dry-run
+kmc validate
+npm run check
+npm run build
+npm run mobile:build
 ```
 
-Der Android-Debug-Build liegt anschließend unter `apps/mobile/app/build/outputs/apk/debug/app-debug.apk`.
+Der Android-Debug-Build liegt unter `apps/mobile/app/build/outputs/apk/debug/app-debug.apk`.
