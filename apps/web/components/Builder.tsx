@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { addDefaultWeatherWidgets, blankDashboard, createWidget, formatValue, normalizeDashboard, placementIsFree, type DashboardDocument, type DashboardPage, type DataSource, type LegacyDashboardDocument, type Widget, type WidgetType, valueAtPath, weatherTemplate } from "../lib/dashboard";
+import ApiWorkbench from "./ApiWorkbench";
 
 const API = "";
 type Notice = { kind: "ok" | "error"; text: string } | null;
@@ -64,6 +65,7 @@ export default function Builder() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [studioMode, setStudioMode] = useState<"edit" | "preview">("edit");
+  const [workspaceView, setWorkspaceView] = useState<"dashboard" | "api">("dashboard");
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("display");
   const activePage = document.pages.find((page) => page.id === activePageId) ?? document.pages[0];
   const widgets = activePage.widgets;
@@ -164,19 +166,6 @@ export default function Builder() {
     const response = await fetch(`/api/dashboards/${dashboardId}`, { method: "DELETE" });
     if (!response.ok) return setNotice({ kind: "error", text: "Dashboard konnte nicht gelöscht werden." });
     setDashboards((items) => items.filter((item) => item.id !== dashboardId)); selectDashboard(""); setNotice({ kind: "ok", text: "Dashboard gelöscht." });
-  };
-
-  const testSource = async (source: DataSource) => {
-    try {
-      const headers = { ...source.headers };
-      if (source.auth.type === "bearer" && source.auth.value) headers.Authorization = `Bearer ${source.auth.value}`;
-      if (source.auth.type === "apiKey" && source.auth.name && source.auth.value) headers[source.auth.name] = source.auth.value;
-      if (source.auth.type === "basic") headers.Authorization = `Basic ${btoa(`${source.auth.username ?? ""}:${source.auth.password ?? ""}`)}`;
-      const response = await fetch(source.url, { method: source.method, headers, body: source.method === "GET" ? undefined : source.body });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      setPreviewData((current) => ({ ...current, [source.id]: response.headers.get("content-type")?.includes("json") ? undefined : null }));
-      const json = await response.json(); setPreviewData((current) => ({ ...current, [source.id]: json })); setNotice({ kind: "ok", text: `${source.name}: Test erfolgreich.` });
-    } catch (error) { setNotice({ kind: "error", text: `API-Test fehlgeschlagen: ${error instanceof Error ? error.message : error}` }); }
   };
 
   const templates = useMemo(() => [{ name: "Leer", create: blankDashboard }, { name: "Wetter", create: () => addDefaultWeatherWidgets(weatherTemplate()) }], []);
@@ -301,6 +290,7 @@ export default function Builder() {
   return <main className="builder-shell">
     <header className="topbar">
       <div className="brand"><span className="brand-mark">d</span><div><strong>display</strong><small>Dashboard Studio</small></div></div>
+      <nav className="main-nav"><button className={workspaceView === "dashboard" ? "active" : ""} onClick={() => setWorkspaceView("dashboard")}>Dashboard</button><button className={workspaceView === "api" ? "active" : ""} onClick={() => setWorkspaceView("api")}>API Studio</button></nav>
       <input className="dashboard-name" value={document.name} onChange={(event) => patchDocument({ name: event.target.value })} aria-label="Dashboard-Name" />
       <div className="publish-controls">
         <button className="button ghost" disabled={busy} onClick={() => save(false)}>Entwurf</button>
@@ -308,7 +298,9 @@ export default function Builder() {
       </div>
     </header>
 
-    <section className={`workspace${leftOpen ? "" : " left-collapsed"}${rightOpen ? "" : " right-collapsed"}${studioMode === "preview" ? " preview-mode" : ""}`}>
+    {workspaceView === "api" && <ApiWorkbench sources={document.dataSources} onAdd={() => { const id = crypto.randomUUID(); patchDocument({ dataSources: [...document.dataSources, { id, name: "Neue API", method: "GET", url: "https://", headers: {}, auth: { type: "none" } }] }); return id; }} onPatch={patchSource} onRemove={(id) => patchDocument({ dataSources: document.dataSources.filter((source) => source.id !== id) })} onData={(id, data) => setPreviewData((current) => ({ ...current, [id]: data }))} onMap={mapLeaf} onClose={() => setWorkspaceView("dashboard")} />}
+
+    <section className={`workspace${workspaceView === "api" ? " api-hidden" : ""}${leftOpen ? "" : " left-collapsed"}${rightOpen ? "" : " right-collapsed"}${studioMode === "preview" ? " preview-mode" : ""}`}>
       <aside className="sidebar left-panel">
         <nav className="tabs">
           <button className={tab === "widgets" ? "active" : ""} onClick={() => setTab("widgets")}>Widgets</button>
@@ -324,7 +316,7 @@ export default function Builder() {
           <label className="page-name">Seitenname<input value={activePage.name} onChange={(event)=>setDocument((current)=>({...current,pages:current.pages.map((page)=>page.id===activePage.id?{...page,name:event.target.value}:page)}))}/></label>
           <p className="eyebrow">Ebenen</p><div className="layers">{widgets.map((item) => <button className={item.id === selectedId ? "active" : ""} key={item.id} onClick={() => setSelectedId(item.id)}><span>{item.title}</span><small>{item.width}×{item.height}</small></button>)}</div>
         </div>}
-        {tab === "data" && <div className="panel-content">
+        {tab === "data" && false && <div className="panel-content">
           <button className="button wide" onClick={() => patchDocument({ dataSources: [...document.dataSources, { id: crypto.randomUUID(), name: "Neue API", method: "GET", url: "https://", headers: {}, auth: { type: "none" } }] })}>+ Datenquelle</button>
           {document.dataSources.map((source) => <div className="source-card" key={source.id}>
             <input value={source.name} onChange={(e) => patchSource(source.id, { name: e.target.value })} />
@@ -335,7 +327,7 @@ export default function Builder() {
             {source.auth.type === "apiKey" && <div className="inline"><input placeholder="Header-Name" value={source.auth.name ?? "X-API-Key"} onChange={(e) => patchSource(source.id, { auth: { ...source.auth, name: e.target.value } })} /><input type="password" placeholder="API-Key" value={source.auth.value ?? ""} onChange={(e) => patchSource(source.id, { auth: { ...source.auth, value: e.target.value } })} /></div>}
             {source.auth.type === "bearer" && <input type="password" placeholder="Bearer Token" value={source.auth.value ?? ""} onChange={(e) => patchSource(source.id, { auth: { ...source.auth, value: e.target.value } })} />}
             {source.auth.type === "basic" && <div className="inline"><input placeholder="Benutzername" value={source.auth.username ?? ""} onChange={(e) => patchSource(source.id, { auth: { ...source.auth, username: e.target.value } })} /><input type="password" placeholder="Passwort" value={source.auth.password ?? ""} onChange={(e) => patchSource(source.id, { auth: { ...source.auth, password: e.target.value } })} /></div>}
-            <button className="text-button" onClick={() => testSource(source)}>Verbindung testen →</button>
+            <button className="text-button" onClick={() => setWorkspaceView("api")}>Im API Studio testen →</button>
             {Object.prototype.hasOwnProperty.call(previewData, source.id) && <div className="response-mapper">
               <div className="mapper-heading"><span>API-Antwort</span><small>Feld wählen und visuell zuordnen</small></div>
               {jsonLeaves(previewData[source.id]).slice(0, 150).map((leaf) => <div className="mapping-row" key={leaf.path}>
@@ -345,6 +337,7 @@ export default function Builder() {
             </div>}
           </div>)}
         </div>}
+        {tab === "data" && <div className="panel-content data-launcher"><span className="data-launcher-icon">↗</span><h2>APIs haben jetzt ihren eigenen Raum.</h2><p>Requests konfigurieren, Fehler exakt diagnostizieren und vollständige Antworten prüfen – ohne gequetschte Seitenleiste.</p><button className="button primary wide" onClick={() => setWorkspaceView("api")}>API Studio öffnen</button><small>{document.dataSources.length} Datenquelle{document.dataSources.length === 1 ? "" : "n"} im Dashboard</small></div>}
         {tab === "settings" && <div className="panel-content form-stack">
           <p className="eyebrow">Meine Displays</p><select value={dashboardId} disabled={busy} onChange={(event) => void selectDashboard(event.target.value)}><option value="">+ Neues Dashboard</option>{dashboards.map((item) => <option value={item.id} key={item.id}>{item.name}{item.activeVersion ? ` · v${item.activeVersion}` : " · Entwurf"}</option>)}</select>
           <label>Konfigurationsprüfung (Sek.)<input type="number" min="10" value={document.settings.configPollSeconds} onChange={(e) => patchDocument({ settings: { ...document.settings, configPollSeconds: Number(e.target.value) } })} /></label>
