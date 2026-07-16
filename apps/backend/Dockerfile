@@ -13,6 +13,8 @@ WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/backend/package.json ./package.json
 COPY --from=build /app/apps/backend/dist ./dist
+COPY packages/database/migrations ./migrations
+ENV MIGRATIONS_DIR=/app/migrations
 USER node
 EXPOSE 3001
 CMD ["node", "dist/index.js"]

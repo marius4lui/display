@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import cors from "cors";
 import express, { type Request, type Response } from "express";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
-import { database } from "./database.js";
+import { database, runMigrations } from "./database.js";
 import { parseEnvelope, type EncryptedEnvelope } from "./types.js";
 
 const app = express();
@@ -286,4 +286,13 @@ app.use((error: unknown, _request: Request, response: Response, _next: unknown) 
   response.status(message.includes("ungültig") || message.includes("fehlt") ? 400 : 500).json({ error: message });
 });
 
-app.listen(port, () => console.log(`display backend: http://localhost:${port}`));
+async function start() {
+  await runMigrations();
+  app.listen(port, () => console.log(`display backend: http://localhost:${port}`));
+}
+
+start().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : "Unbekannter Startfehler";
+  console.error("backend startup failed", message);
+  process.exit(1);
+});
