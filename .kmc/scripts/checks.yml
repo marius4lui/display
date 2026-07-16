@@ -6,5 +6,7 @@ defaults:
 steps:
   - name: TypeScript checks
     run: npm run check
+  - name: Unit tests
+    run: npm test
   - name: Production builds
     run: npm run build

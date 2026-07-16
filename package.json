@@ -2,7 +2,10 @@
   "name": "display",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["apps/web", "apps/backend"],
+  "workspaces": [
+    "apps/web",
+    "apps/backend"
+  ],
   "scripts": {
     "dev": "concurrently -n web,backend -c blue,green \"npm run dev:web\" \"npm run dev:backend\"",
     "dev:web": "npm run dev --workspace=@display/web",
@@ -11,13 +14,20 @@
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check": "npm run typecheck",
+    "test": "npm run test --workspaces --if-present",
     "db:up": "docker compose up -d mysql",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f mysql",
     "mobile:build": "cd apps/mobile && ./gradlew assembleDebug"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "postcss": "^8.5.10"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "postcss": "$postcss"
+  }
 }
