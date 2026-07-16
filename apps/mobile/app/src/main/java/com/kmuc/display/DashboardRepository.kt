@@ -18,6 +18,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
+import javax.crypto.AEADBadTagException
 
 data class RuntimeValue(val value: Any?, val stale: Boolean = false, val error: String? = null)
 private data class HttpResult(val status: Int, val body: String, val etag: String?)
@@ -91,7 +92,8 @@ class DashboardController(context: Context) {
             store.saveEtag(response.etag)
             status = "Live · Version $version"
         } catch (error: Exception) {
-            status = if (dashboard != null) "Offline · ${error.message ?: "Verbindungsfehler"}" else "Fehler · ${error.message ?: "Dashboard nicht verfügbar"}"
+            val message = error.userMessage()
+            status = if (dashboard != null) "Offline · $message" else "Fehler · $message"
         }
     }
 
@@ -140,4 +142,11 @@ class DashboardController(context: Context) {
         if (code !in 200..299) throw IllegalStateException("HTTP $code")
         HttpResult(code, connection.inputStream.bufferedReader().use { it.readText() }, connection.getHeaderField("ETag"))
     }
+}
+
+private fun Throwable.userMessage(): String = when {
+    this is AEADBadTagException || message?.contains("BAD_DECRYPT", ignoreCase = true) == true ->
+        "Entschlüsselung fehlgeschlagen. Die PIN/Passphrase passt nicht zu diesem Dashboard. Bitte prüfe auch die Dashboard-URL."
+    message.isNullOrBlank() -> "Dashboard nicht verfügbar"
+    else -> message.orEmpty()
 }

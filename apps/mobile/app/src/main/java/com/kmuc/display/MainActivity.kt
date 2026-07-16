@@ -4,6 +4,9 @@ import android.graphics.Color as AndroidColor
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -19,10 +22,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -62,6 +70,7 @@ import java.util.Date
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enterFullscreen()
         setContent {
             DisplayTheme {
                 val controller = remember { DashboardController(applicationContext) }
@@ -73,6 +82,19 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) enterFullscreen()
+    }
+
+    private fun enterFullscreen() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
 }
 
 @Composable
@@ -82,8 +104,28 @@ private fun SetupScreen(onConnect: (String, String, Int?, Int?) -> Unit) {
     var configPoll by remember { mutableStateOf("") }
     var dataPoll by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    Box(Modifier.fillMaxSize().background(Color(0xFF090B12)), contentAlignment = Alignment.Center) {
-        Column(Modifier.width(520.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xFF141824)).padding(32.dp), verticalArrangement = Arrangement.spacedBy(15.dp)) {
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFF090B12))
+            .safeDrawingPadding()
+            .imePadding(),
+        contentAlignment = Alignment.Center
+    ) {
+        val compact = maxWidth < 430.dp
+        val screenPadding = if (compact) 12.dp else 24.dp
+        val cardPadding = if (compact) 20.dp else 32.dp
+        Column(
+            Modifier
+                .padding(screenPadding)
+                .widthIn(max = 520.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(if (compact) 18.dp else 24.dp))
+                .background(Color(0xFF141824))
+                .verticalScroll(rememberScrollState())
+                .padding(cardPadding),
+            verticalArrangement = Arrangement.spacedBy(15.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(45.dp).clip(RoundedCornerShape(13.dp)).background(Color(0xFF7C5CFF)), contentAlignment = Alignment.Center) { Text("d", fontSize = 29.sp, fontWeight = FontWeight.Bold) }
                 Spacer(Modifier.width(13.dp)); Column { Text("display", fontSize = 24.sp, fontWeight = FontWeight.Bold); Text("DASHBOARD CLIENT", color = Color(0xFF8B91A7), fontSize = 10.sp, letterSpacing = 1.5.sp) }
@@ -92,7 +134,10 @@ private fun SetupScreen(onConnect: (String, String, Int?, Int?) -> Unit) {
             Text("Trage die veröffentlichte URL und deine PIN/Passphrase einmalig ein. Die Daten werden nur auf diesem Gerät entschlüsselt.", color = Color(0xFFA7ABBA), fontSize = 13.sp)
             OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth(), label = { Text("Dashboard-URL") }, singleLine = true)
             OutlinedTextField(secret, { secret = it }, Modifier.fillMaxWidth(), label = { Text("PIN/Passphrase") }, singleLine = true)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (compact) {
+                OutlinedTextField(configPoll, { configPoll = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Konfig.-Polling (optional)") }, singleLine = true)
+                OutlinedTextField(dataPoll, { dataPoll = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Daten-Polling (optional)") }, singleLine = true)
+            } else Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(configPoll, { configPoll = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("Konfig.-Polling (optional)") }, singleLine = true)
                 OutlinedTextField(dataPoll, { dataPoll = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("Daten-Polling (optional)") }, singleLine = true)
             }
