@@ -3,10 +3,11 @@ node_modules/
 dist/
 .env
 *.log
+*.tsbuildinfo
 .DS_Store
 .idea/
 .gradle/
+.kotlin/
 local.properties
 **/build/
 *.iml
-
