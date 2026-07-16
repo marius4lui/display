@@ -1,1 +1,3 @@
-# display
+# Display
+Manager für Dashboards auf lokalen Geräten 
+## ...comming soon...
