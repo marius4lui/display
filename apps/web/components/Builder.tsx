@@ -17,6 +17,13 @@ type JsonLeaf = { path: string; value: unknown };
 type ResizeDirection = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 type Placement = { x: number; y: number; width: number; height: number };
 type DragPayload = Placement & { grabX: number; grabY: number } & ({ kind: "existing"; id: string } | { kind: "new"; widgetType: WidgetType });
+type PreviewDevice = "display" | "desktop" | "tablet" | "mobile";
+const previewDevices: Record<PreviewDevice, { label: string; size: string; ratio: string }> = {
+  display: { label: "Display", size: "1920 × 1080", ratio: "16 / 9" },
+  desktop: { label: "Desktop", size: "1440 × 900", ratio: "16 / 10" },
+  tablet: { label: "Tablet", size: "1024 × 768", ratio: "4 / 3" },
+  mobile: { label: "Mobile", size: "390 × 844", ratio: "390 / 844" },
+};
 
 function jsonLeaves(value: unknown, path = "", result: JsonLeaf[] = []): JsonLeaf[] {
   if (value !== null && typeof value === "object") {
@@ -27,16 +34,16 @@ function jsonLeaves(value: unknown, path = "", result: JsonLeaf[] = []): JsonLea
   return result;
 }
 
-function PreviewWidget({ widget, data, selected, onSelect, onDragStart, onDragEnd, onResizeStart }: { widget: Widget; data: Record<string, unknown>; selected: boolean; onSelect: () => void; onDragStart: (event: DragEvent<HTMLElement>) => void; onDragEnd: () => void; onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>, direction: ResizeDirection) => void }) {
+function PreviewWidget({ widget, data, selected, interactive, onSelect, onDragStart, onDragEnd, onResizeStart }: { widget: Widget; data: Record<string, unknown>; selected: boolean; interactive: boolean; onSelect: () => void; onDragStart: (event: DragEvent<HTMLElement>) => void; onDragEnd: () => void; onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>, direction: ResizeDirection) => void }) {
   let content: React.ReactNode = widget.staticValue ?? widget.title;
   if (widget.type === "clock") content = <Clock />;
   if (widget.type === "image") content = widget.imageUrl ? <img src={widget.imageUrl} alt={widget.title} /> : "Bild-URL fehlt";
   if (widget.type === "value" || widget.type === "weather") content = formatValue(valueAtPath(data[widget.dataSourceId ?? ""], widget.jsonPath), widget.format, widget.suffix);
   return (
-    <article draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onSelect} className={`preview-widget animation-${widget.animation ?? "none"}${selected ? " selected-outline" : ""}`} style={{ gridColumn: `${widget.x + 1} / span ${widget.width}`, gridRow: `${widget.y + 1} / span ${widget.height}`, background: widget.style.background, color: widget.style.foreground, textAlign: widget.style.align }}>
+    <article draggable={interactive} onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={interactive ? onSelect : undefined} className={`preview-widget animation-${widget.animation ?? "none"}${selected ? " selected-outline" : ""}${interactive ? "" : " preview-only"}`} style={{ gridColumn: `${widget.x + 1} / span ${widget.width}`, gridRow: `${widget.y + 1} / span ${widget.height}`, background: widget.style.background, color: widget.style.foreground, textAlign: widget.style.align }}>
       <small>{widget.title}</small>
       <div className="widget-value">{widget.type === "weather" && <span className="weather-icon">☀</span>}{content}</div>
-      {selected && (["n", "ne", "e", "se", "s", "sw", "w", "nw"] as ResizeDirection[]).map((direction) => <button draggable={false} aria-label={`Größe ${direction}`} className={`resize-handle resize-${direction}`} key={direction} onDragStart={(event) => event.preventDefault()} onPointerDown={(event) => onResizeStart(event, direction)} />)}
+      {interactive && selected && (["n", "ne", "e", "se", "s", "sw", "w", "nw"] as ResizeDirection[]).map((direction) => <button draggable={false} aria-label={`Größe ${direction}`} className={`resize-handle resize-${direction}`} key={direction} onDragStart={(event) => event.preventDefault()} onPointerDown={(event) => onResizeStart(event, direction)} />)}
     </article>
   );
 }
@@ -55,6 +62,8 @@ export default function Builder() {
   const [customTemplates, setCustomTemplates] = useState<{ name: string; document: DashboardDocument }[]>([]);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
+  const [studioMode, setStudioMode] = useState<"edit" | "preview">("edit");
+  const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("display");
   const selected = document.widgets.find((item) => item.id === selectedId);
   const [dragging, setDragging] = useState(false);
   const [dragPayload, setDragPayload] = useState<DragPayload | null>(null);
@@ -230,7 +239,7 @@ export default function Builder() {
       </div>
     </header>
 
-    <section className={`workspace${leftOpen ? "" : " left-collapsed"}${rightOpen ? "" : " right-collapsed"}`}>
+    <section className={`workspace${leftOpen ? "" : " left-collapsed"}${rightOpen ? "" : " right-collapsed"}${studioMode === "preview" ? " preview-mode" : ""}`}>
       <aside className="sidebar left-panel">
         <nav className="tabs">
           <button className={tab === "widgets" ? "active" : ""} onClick={() => setTab("widgets")}>Widgets</button>
@@ -276,8 +285,8 @@ export default function Builder() {
       </aside>
 
       <section className="canvas-area">
-        <div className="canvas-toolbar"><button className="panel-toggle" onClick={() => setLeftOpen((open) => !open)} aria-label="Linke Seitenleiste umschalten">{leftOpen ? "‹" : "›"}<span>Bausteine</span></button><span><i /> Live Preview</span><span>1920 × 1080 · Landscape</span><button className="panel-toggle right" onClick={() => setRightOpen((open) => !open)} aria-label="Rechte Seitenleiste umschalten"><span>Eigenschaften</span>{rightOpen ? "›" : "‹"}</button></div>
-        <div className={`display-frame${dragging ? " is-dragging" : ""}`}><div className="display-grid" onDragOver={dragOverCanvas} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPlacement(null); }} onDrop={dropOnCanvas} style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>{document.widgets.map((item) => <PreviewWidget key={item.id} widget={item} data={previewData} selected={item.id === selectedId} onSelect={() => setSelectedId(item.id)} onDragStart={(event) => { event.dataTransfer.setData("application/x-display-widget", item.id); event.dataTransfer.effectAllowed = "move"; const elementRect = event.currentTarget.getBoundingClientRect(); const gridRect = event.currentTarget.closest(".display-grid")?.getBoundingClientRect(); const cellWidth = (gridRect?.width ?? elementRect.width) / document.settings.columns; const cellHeight = (gridRect?.height ?? elementRect.height) / document.settings.rows; setDragPayload({ kind: "existing", id: item.id, x: item.x, y: item.y, width: item.width, height: item.height, grabX: Math.max(0, Math.min(item.width - 1, Math.floor((event.clientX - elementRect.left) / cellWidth))), grabY: Math.max(0, Math.min(item.height - 1, Math.floor((event.clientY - elementRect.top) / cellHeight))) }); setDragging(true); }} onDragEnd={finishDrag} onResizeStart={(event, direction) => startResize(event, item, direction)} />)}{placement && <div className="placement-preview" style={{ gridColumn: `${placement.x + 1} / span ${placement.width}`, gridRow: `${placement.y + 1} / span ${placement.height}` }}><span>{placement.width} × {placement.height}</span></div>}</div></div>
+        <div className="canvas-toolbar"><div className="studio-tabs"><button className={studioMode === "edit" ? "active" : ""} onClick={() => setStudioMode("edit")}>Bearbeiten</button><button className={studioMode === "preview" ? "active" : ""} onClick={() => setStudioMode("preview")}>Vorschau</button></div>{studioMode === "edit" ? <><button className="panel-toggle" onClick={() => setLeftOpen((open) => !open)} aria-label="Linke Seitenleiste umschalten">{leftOpen ? "‹" : "›"}<span>Bausteine</span></button><span><i /> Live Preview</span><span>1920 × 1080</span><button className="panel-toggle right" onClick={() => setRightOpen((open) => !open)} aria-label="Rechte Seitenleiste umschalten"><span>Eigenschaften</span>{rightOpen ? "›" : "‹"}</button></> : <><div className="device-tabs">{(Object.keys(previewDevices) as PreviewDevice[]).map((device) => <button className={previewDevice === device ? "active" : ""} key={device} onClick={() => setPreviewDevice(device)}>{previewDevices[device].label}</button>)}</div><span className="device-size">{previewDevices[previewDevice].size}</span></>}</div>
+        <div className={`display-frame device-${previewDevice}${dragging ? " is-dragging" : ""}`} style={studioMode === "preview" ? { aspectRatio: previewDevices[previewDevice].ratio } : undefined}><div className="display-grid" onDragOver={studioMode === "edit" ? dragOverCanvas : undefined} onDragLeave={studioMode === "edit" ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPlacement(null); } : undefined} onDrop={studioMode === "edit" ? dropOnCanvas : undefined} style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>{document.widgets.map((item) => <PreviewWidget key={item.id} widget={item} data={previewData} interactive={studioMode === "edit"} selected={studioMode === "edit" && item.id === selectedId} onSelect={() => setSelectedId(item.id)} onDragStart={(event) => { event.dataTransfer.setData("application/x-display-widget", item.id); event.dataTransfer.effectAllowed = "move"; const elementRect = event.currentTarget.getBoundingClientRect(); const gridRect = event.currentTarget.closest(".display-grid")?.getBoundingClientRect(); const cellWidth = (gridRect?.width ?? elementRect.width) / document.settings.columns; const cellHeight = (gridRect?.height ?? elementRect.height) / document.settings.rows; setDragPayload({ kind: "existing", id: item.id, x: item.x, y: item.y, width: item.width, height: item.height, grabX: Math.max(0, Math.min(item.width - 1, Math.floor((event.clientX - elementRect.left) / cellWidth))), grabY: Math.max(0, Math.min(item.height - 1, Math.floor((event.clientY - elementRect.top) / cellHeight))) }); setDragging(true); }} onDragEnd={finishDrag} onResizeStart={(event, direction) => startResize(event, item, direction)} />)}{studioMode === "edit" && placement && <div className="placement-preview" style={{ gridColumn: `${placement.x + 1} / span ${placement.width}`, gridRow: `${placement.y + 1} / span ${placement.height}` }}><span>{placement.width} × {placement.height}</span></div>}</div></div>
         {notice && <div className={`notice ${notice.kind}`}>{notice.text}</div>}
         {displayUrl && <div className="share-bar"><span>Client-URL</span><code>{displayUrl}</code><button onClick={() => navigator.clipboard.writeText(displayUrl)}>Kopieren</button></div>}
       </section>
