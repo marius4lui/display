@@ -68,10 +68,21 @@ data class DashboardDataSource(
     val refreshSeconds: Int?,
 )
 
+data class DashboardPage(val id: String, val name: String, val widgets: List<DashboardWidget>)
+data class PageNavigation(
+    val visible: Boolean = true,
+    val x: Int = 4,
+    val y: Int = 7,
+    val width: Int = 4,
+    val height: Int = 1,
+    val style: WidgetStyle = WidgetStyle(align = "center"),
+)
+
 data class DashboardDocument(
     val name: String,
     val settings: DashboardSettings,
-    val widgets: List<DashboardWidget>,
+    val pages: List<DashboardPage>,
+    val pageNavigation: PageNavigation,
     val dataSources: List<DashboardDataSource>,
 )
 
@@ -95,7 +106,8 @@ fun parsePublishedDashboard(json: String): PublishedDashboard {
 
 fun parseDashboardDocument(json: String): DashboardDocument {
     val root = JSONObject(json)
-    require(root.getInt("schemaVersion") == 1) { "Dashboard-Schema wird nicht unterstützt" }
+    val schemaVersion = root.getInt("schemaVersion")
+    require(schemaVersion == 1 || schemaVersion == 2) { "Dashboard-Schema wird nicht unterstützt" }
     val settingsJson = root.getJSONObject("settings")
     val settings = DashboardSettings(
         configPollSeconds = settingsJson.optInt("configPollSeconds", 30).coerceAtLeast(10),
@@ -105,8 +117,7 @@ fun parseDashboardDocument(json: String): DashboardDocument {
         background = settingsJson.optString("background", "#090b12"),
         foreground = settingsJson.optString("foreground", "#f6f7fb"),
     )
-    val widgetsJson = root.getJSONArray("widgets")
-    val widgets = buildList {
+    fun parseWidgets(widgetsJson: JSONArray) = buildList {
         for (index in 0 until widgetsJson.length()) {
             val item = widgetsJson.getJSONObject(index)
             val styleJson = item.optJSONObject("style") ?: JSONObject()
@@ -122,6 +133,21 @@ fun parseDashboardDocument(json: String): DashboardDocument {
             ))
         }
     }
+    val pages = if (schemaVersion == 1) listOf(DashboardPage("legacy", "Seite 1", parseWidgets(root.getJSONArray("widgets")))) else buildList {
+        val pagesJson = root.getJSONArray("pages")
+        for (index in 0 until pagesJson.length()) {
+            val item = pagesJson.getJSONObject(index)
+            add(DashboardPage(item.getString("id"), item.optString("name", "Seite ${index + 1}"), parseWidgets(item.getJSONArray("widgets"))))
+        }
+    }
+    require(pages.isNotEmpty()) { "Dashboard benötigt mindestens eine Seite" }
+    val navJson = root.optJSONObject("pageNavigation") ?: JSONObject()
+    val navStyle = navJson.optJSONObject("style") ?: JSONObject()
+    val pageNavigation = PageNavigation(
+        visible = navJson.optBoolean("visible", true), x = navJson.optInt("x", 4), y = navJson.optInt("y", 7),
+        width = navJson.optInt("width", 4).coerceAtLeast(1), height = navJson.optInt("height", 1).coerceAtLeast(1),
+        style = WidgetStyle(navStyle.optString("background", "#151b2b"), navStyle.optString("foreground", "#f6f7fb"), navStyle.optString("accent", "#7c5cff"), navStyle.optString("align", "center")),
+    )
     val sourcesJson = root.optJSONArray("dataSources")
     val sources = buildList {
         if (sourcesJson != null) for (index in 0 until sourcesJson.length()) {
@@ -136,7 +162,7 @@ fun parseDashboardDocument(json: String): DashboardDocument {
             ))
         }
     }
-    return DashboardDocument(root.optString("name", "display"), settings, widgets, sources)
+    return DashboardDocument(root.optString("name", "display"), settings, pages, pageNavigation, sources)
 }
 
 fun valueAtJsonPath(value: Any?, path: String?): Any? {

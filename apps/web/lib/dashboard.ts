@@ -31,8 +31,23 @@ export interface Widget {
   style: { background: string; foreground: string; accent: string; align: "left" | "center" | "right" };
 }
 
+export interface DashboardPage {
+  id: string;
+  name: string;
+  widgets: Widget[];
+}
+
+export interface PageNavigation {
+  visible: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  style: Widget["style"];
+}
+
 export interface DashboardDocument {
-  schemaVersion: 1;
+  schemaVersion: 2;
   name: string;
   settings: {
     configPollSeconds: number;
@@ -43,6 +58,12 @@ export interface DashboardDocument {
     foreground: string;
   };
   dataSources: DataSource[];
+  pages: DashboardPage[];
+  pageNavigation: PageNavigation;
+}
+
+export interface LegacyDashboardDocument extends Omit<DashboardDocument, "schemaVersion" | "pages" | "pageNavigation"> {
+  schemaVersion: 1;
   widgets: Widget[];
 }
 
@@ -52,33 +73,57 @@ const widget = (type: WidgetType, title: string, x: number, y: number, width: nu
 });
 
 export const blankDashboard = (): DashboardDocument => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   name: "Mein Dashboard",
   settings: { configPollSeconds: 30, dataPollSeconds: 300, columns: 12, rows: 8, background: "#090b12", foreground: "#f6f7fb" },
   dataSources: [],
-  widgets: [
-    { ...widget("text", "Willkommen", 0, 0, 7, 3), staticValue: "Alles auf einen Blick." },
-    { ...widget("clock", "Uhrzeit", 7, 0, 5, 3), style: { background: "#7c5cff", foreground: "#ffffff", accent: "#b8a9ff", align: "center" } },
-  ],
+  pages: [{ id: crypto.randomUUID(), name: "Seite 1", widgets: [
+      { ...widget("text", "Willkommen", 0, 0, 7, 3), staticValue: "Alles auf einen Blick." },
+      { ...widget("clock", "Uhrzeit", 7, 0, 5, 3), style: { background: "#7c5cff", foreground: "#ffffff", accent: "#b8a9ff", align: "center" } },
+  ] }],
+  pageNavigation: { visible: true, x: 4, y: 7, width: 4, height: 1, style: { background: "#151b2b", foreground: "#f6f7fb", accent: "#7c5cff", align: "center" } },
 });
 
 export const weatherTemplate = (): DashboardDocument => ({
   ...blankDashboard(),
   name: "Wetterstation",
   dataSources: [{ id: crypto.randomUUID(), name: "Wetter-API", method: "GET", url: "https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&current=temperature_2m,weather_code", headers: {}, auth: { type: "none" }, refreshSeconds: 600 }],
-  widgets: [],
+  pages: [{ id: crypto.randomUUID(), name: "Seite 1", widgets: [] }],
 });
 
 export function addDefaultWeatherWidgets(document: DashboardDocument): DashboardDocument {
   const sourceId = document.dataSources[0]?.id;
   return {
     ...document,
-    widgets: [
+    pages: [{ ...document.pages[0], widgets: [
       { ...widget("weather", "Berlin", 0, 0, 8, 5), dataSourceId: sourceId, jsonPath: "current.temperature_2m", format: "temperature", suffix: "°C", animation: "float" },
       { ...widget("clock", "Lokale Zeit", 8, 0, 4, 5), style: { background: "#e5ff5f", foreground: "#11130a", accent: "#11130a", align: "center" } },
       { ...widget("text", "Hinweis", 0, 5, 12, 3), staticValue: "Daten werden automatisch aktualisiert." },
-    ],
+    ] }],
   };
+}
+
+export function normalizeDashboard(input: DashboardDocument | LegacyDashboardDocument): DashboardDocument {
+  if (input.schemaVersion === 2) return input;
+  const { widgets, ...rest } = input;
+  return {
+    ...rest,
+    schemaVersion: 2,
+    pages: [{ id: crypto.randomUUID(), name: "Seite 1", widgets }],
+    pageNavigation: { visible: true, x: 4, y: 7, width: 4, height: 1, style: { background: "#151b2b", foreground: "#f6f7fb", accent: "#7c5cff", align: "center" } },
+  };
+}
+
+export function overlaps(a: PlacementLike, b: PlacementLike): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+type PlacementLike = Pick<Widget, "x" | "y" | "width" | "height">;
+
+export function placementIsFree(document: DashboardDocument, page: DashboardPage, placement: PlacementLike, ignoreWidgetId?: string): boolean {
+  if (placement.x < 0 || placement.y < 0 || placement.width < 1 || placement.height < 1 || placement.x + placement.width > document.settings.columns || placement.y + placement.height > document.settings.rows) return false;
+  if (document.pages.length > 1 && document.pageNavigation.visible && overlaps(placement, document.pageNavigation)) return false;
+  return !page.widgets.some((item) => item.id !== ignoreWidgetId && overlaps(placement, item));
 }
 
 export function createWidget(type: WidgetType, index: number): Widget {

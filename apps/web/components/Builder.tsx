@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { addDefaultWeatherWidgets, blankDashboard, createWidget, formatValue, type DashboardDocument, type DataSource, type Widget, type WidgetType, valueAtPath, weatherTemplate } from "../lib/dashboard";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { addDefaultWeatherWidgets, blankDashboard, createWidget, formatValue, normalizeDashboard, placementIsFree, type DashboardDocument, type DashboardPage, type DataSource, type LegacyDashboardDocument, type Widget, type WidgetType, valueAtPath, weatherTemplate } from "../lib/dashboard";
 import { decryptDocument, encryptDocument, type EncryptedEnvelope } from "../lib/crypto";
 
 const API = "";
@@ -16,7 +16,7 @@ function Clock() {
 
 type JsonLeaf = { path: string; value: unknown };
 type ResizeDirection = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-type Placement = { x: number; y: number; width: number; height: number };
+type Placement = { x: number; y: number; width: number; height: number; valid?: boolean };
 type DragPayload = Placement & { grabX: number; grabY: number } & ({ kind: "existing"; id: string } | { kind: "new"; widgetType: WidgetType });
 type PreviewDevice = "display" | "desktop" | "tablet" | "mobile";
 const previewDevices: Record<PreviewDevice, { label: string; size: string; ratio: string }> = {
@@ -51,7 +51,8 @@ function PreviewWidget({ widget, data, selected, interactive, onSelect, onDragSt
 
 export default function Builder() {
   const [document, setDocument] = useState<DashboardDocument>(() => blankDashboard());
-  const [selectedId, setSelectedId] = useState(document.widgets[0]?.id ?? "");
+  const [activePageId, setActivePageId] = useState(document.pages[0].id);
+  const [selectedId, setSelectedId] = useState(document.pages[0].widgets[0]?.id ?? "");
   const [tab, setTab] = useState<"widgets" | "data" | "settings">("widgets");
   const [passphrase, setPassphrase] = useState("");
   const [dashboardId, setDashboardId] = useState("");
@@ -66,10 +67,14 @@ export default function Builder() {
   const [rightOpen, setRightOpen] = useState(true);
   const [studioMode, setStudioMode] = useState<"edit" | "preview">("edit");
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("display");
-  const selected = document.widgets.find((item) => item.id === selectedId);
+  const activePage = document.pages.find((page) => page.id === activePageId) ?? document.pages[0];
+  const widgets = activePage.widgets;
+  const selected = widgets.find((item) => item.id === selectedId);
   const [dragging, setDragging] = useState(false);
   const [dragPayload, setDragPayload] = useState<DragPayload | null>(null);
   const [placement, setPlacement] = useState<Placement | null>(null);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const loadedDashboardId = useRef("");
 
   useEffect(() => {
     setPassphrase(localStorage.getItem("display-passphrase") ?? "");
@@ -91,7 +96,8 @@ export default function Builder() {
   }, [dashboardId]);
 
   const patchDocument = (patch: Partial<DashboardDocument>) => setDocument((current) => ({ ...current, ...patch }));
-  const patchWidget = (patch: Partial<Widget>) => setDocument((current) => ({ ...current, widgets: current.widgets.map((item) => item.id === selectedId ? { ...item, ...patch } : item) }));
+  const patchWidgets = (update: (items: Widget[]) => Widget[]) => setDocument((current) => ({ ...current, pages: current.pages.map((page) => page.id === activePageId ? { ...page, widgets: update(page.widgets) } : page) }));
+  const patchWidget = (patch: Partial<Widget>) => patchWidgets((items) => items.map((item) => item.id === selectedId ? { ...item, ...patch } : item));
   const patchStyle = (patch: Partial<Widget["style"]>) => selected && patchWidget({ style: { ...selected.style, ...patch } });
   const patchSource = (id: string, patch: Partial<DataSource>) => setDocument((current) => ({ ...current, dataSources: current.dataSources.map((source) => source.id === id ? { ...source, ...patch } : source) }));
 
@@ -101,14 +107,16 @@ export default function Builder() {
       const envelope = await encryptDocument(document, passphrase);
       let id = dashboardId; let url = displayUrl;
       if (!id) {
-        const response = await fetch(`${API}/api/dashboards`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ envelope }) });
+        const response = await fetch(`${API}/api/dashboards`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ envelope, name: document.name }) });
         if (!response.ok) throw new Error((await response.json()).error?.message ?? "Dashboard konnte nicht erstellt werden");
         const result = await response.json() as { id: string; displayUrl: string };
         id = result.id; url = result.displayUrl;
         setDashboardId(id); setDisplayUrl(url);
+        localStorage.setItem(`display-passphrase:${id}`, passphrase);
         setDashboards((current) => [{ id, name: document.name, activeVersion: null, updatedAt: new Date().toISOString() }, ...current]);
         localStorage.setItem("display-project", JSON.stringify({ dashboardId: id, displayUrl: url }));
       } else {
+        localStorage.setItem(`display-passphrase:${id}`, passphrase);
         const response = await fetch(`${API}/api/dashboards/${id}/draft`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ envelope, name: document.name }) });
         if (!response.ok) throw new Error((await response.json()).error?.message ?? "Entwurf konnte nicht gespeichert werden");
       }
@@ -129,8 +137,8 @@ export default function Builder() {
       const response = await fetch(`${API}/api/dashboards/${dashboardId}/draft`);
       if (!response.ok) throw new Error((await response.json()).error?.message ?? "Entwurf konnte nicht geladen werden");
       const result = await response.json() as { envelope: EncryptedEnvelope };
-      const loaded = await decryptDocument<DashboardDocument>(result.envelope, passphrase);
-      setDocument(loaded); setSelectedId(loaded.widgets[0]?.id ?? ""); setNotice({ kind: "ok", text: "Entwurf entschlüsselt und geladen." });
+      const loaded = normalizeDashboard(await decryptDocument<DashboardDocument | LegacyDashboardDocument>(result.envelope, passphrase));
+      setDocument(loaded); setActivePageId(loaded.pages[0].id); setSelectedId(loaded.pages[0].widgets[0]?.id ?? ""); setNotice({ kind: "ok", text: "Entwurf entschlüsselt und geladen." });
     } catch (error) { setNotice({ kind: "error", text: error instanceof Error ? error.message : "Entschlüsselung fehlgeschlagen" }); }
     finally { setBusy(false); }
   };
@@ -142,9 +150,21 @@ export default function Builder() {
     setPairingCode(result.code); setNotice({ kind: "ok", text: `Pairing-Code ${result.code} ist 10 Minuten gültig.` });
   };
 
-  const selectDashboard = (id: string) => {
-    if (!id) { setDashboardId(""); setDisplayUrl(""); setPairingCode(""); setDocument(blankDashboard()); localStorage.removeItem("display-project"); return; }
+  const selectDashboard = async (id: string) => {
+    if (!id) { const next=blankDashboard(); setDashboardId(""); setDisplayUrl(""); setPairingCode(""); setDocument(next); setActivePageId(next.pages[0].id); setSelectedId(next.pages[0].widgets[0]?.id ?? ""); localStorage.removeItem("display-project"); return; }
+    loadedDashboardId.current=id;
     const url = `${location.origin}/d/${id}`; setDashboardId(id); setDisplayUrl(url); setPairingCode(""); localStorage.setItem("display-project", JSON.stringify({ dashboardId: id, displayUrl: url }));
+    const savedSecret = localStorage.getItem(`display-passphrase:${id}`) ?? localStorage.getItem("display-passphrase") ?? "";
+    if (savedSecret) setPassphrase(savedSecret);
+    setBusy(true);
+    try {
+      const response = await fetch(`${API}/api/dashboards/${id}/draft`);
+      if (!response.ok) throw new Error("Entwurf konnte nicht geladen werden");
+      const result = await response.json() as { envelope: EncryptedEnvelope };
+      const loaded = normalizeDashboard(await decryptDocument<DashboardDocument | LegacyDashboardDocument>(result.envelope, savedSecret));
+      setDocument(loaded); setActivePageId(loaded.pages[0].id); setSelectedId(loaded.pages[0].widgets[0]?.id ?? "");
+    } catch (error) { setNotice({ kind: "error", text: savedSecret ? "Dashboard konnte nicht entschlüsselt werden. Passphrase prüfen." : "Passphrase eingeben und Entwurf laden." }); }
+    finally { setBusy(false); }
   };
 
   const deleteDashboard = async () => {
@@ -170,11 +190,12 @@ export default function Builder() {
   const templates = useMemo(() => [{ name: "Leer", create: blankDashboard }, { name: "Wetter", create: () => addDefaultWeatherWidgets(weatherTemplate()) }], []);
   const mapLeaf = (source: DataSource, leaf: JsonLeaf, create = false) => {
     if (create || !selected || (selected.type !== "value" && selected.type !== "weather")) {
-      const item = createWidget("value", document.widgets.length);
+      const item = createWidget("value", widgets.length);
       item.title = leaf.path.split(".").at(-1) || source.name;
       item.dataSourceId = source.id;
       item.jsonPath = leaf.path;
-      patchDocument({ widgets: [...document.widgets, item] });
+      if (!placementIsFree(document, activePage, item)) return setNotice({ kind: "error", text: "Kein freier Platz für das Widget." });
+      patchWidgets((items) => [...items, item]);
       setSelectedId(item.id);
     } else patchWidget({ dataSourceId: source.id, jsonPath: leaf.path });
     setNotice({ kind: "ok", text: `${leaf.path || "Antwort"} ist mit dem Widget verknüpft.` });
@@ -188,14 +209,15 @@ export default function Builder() {
     const y = placement?.y ?? Math.max(0, Math.min(document.settings.rows - 1, fallbackY));
     const widgetId = event.dataTransfer.getData("application/x-display-widget");
     const widgetType = event.dataTransfer.getData("application/x-display-widget-type") as WidgetType;
+    if (!placement?.valid) { setNotice({ kind: "error", text: "Widgets dürfen sich nicht überlappen." }); finishDrag(); return; }
     if (widgetId) {
-      setDocument((current) => ({ ...current, widgets: current.widgets.map((item) => item.id === widgetId ? { ...item, x: Math.min(x, current.settings.columns - item.width), y: Math.min(y, current.settings.rows - item.height) } : item) }));
+      patchWidgets((items) => items.map((item) => item.id === widgetId ? { ...item, x, y } : item));
       setSelectedId(widgetId);
     } else if (widgetType) {
-      const item = createWidget(widgetType, document.widgets.length);
+      const item = createWidget(widgetType, widgets.length);
       item.x = Math.min(x, document.settings.columns - item.width);
       item.y = Math.min(y, document.settings.rows - item.height);
-      patchDocument({ widgets: [...document.widgets, item] });
+      patchWidgets((items) => [...items, item]);
       setSelectedId(item.id);
     }
     setDragging(false);
@@ -209,12 +231,13 @@ export default function Builder() {
     const rect = event.currentTarget.getBoundingClientRect();
     const rawX = Math.floor((event.clientX - rect.left) / rect.width * document.settings.columns) - dragPayload.grabX;
     const rawY = Math.floor((event.clientY - rect.top) / rect.height * document.settings.rows) - dragPayload.grabY;
-    setPlacement({
+    const candidate = {
       x: Math.max(0, Math.min(document.settings.columns - dragPayload.width, rawX)),
       y: Math.max(0, Math.min(document.settings.rows - dragPayload.height, rawY)),
       width: dragPayload.width,
       height: dragPayload.height,
-    });
+    };
+    setPlacement({ ...candidate, valid: placementIsFree(document, activePage, candidate, dragPayload.kind === "existing" ? dragPayload.id : undefined) });
   };
   const finishDrag = () => {
     setDragging(false);
@@ -245,7 +268,7 @@ export default function Builder() {
         next.y = Math.max(0, Math.min(origin.widget.y + origin.widget.height - 1, origin.widget.y + dy));
         next.height = origin.widget.height + origin.widget.y - next.y;
       }
-      setDocument((current) => ({ ...current, widgets: current.widgets.map((item) => item.id === widget.id ? { ...item, ...next } : item) }));
+      if (placementIsFree(document, activePage, next, widget.id)) patchWidgets((items) => items.map((item) => item.id === widget.id ? { ...item, ...next } : item));
     };
     const end = () => {
       window.removeEventListener("pointermove", move);
@@ -258,12 +281,37 @@ export default function Builder() {
     window.addEventListener("pointercancel", end);
   };
 
+  const switchPage = (direction: number) => {
+    const index = document.pages.findIndex((page) => page.id === activePage.id);
+    const next = document.pages[(index + direction + document.pages.length) % document.pages.length];
+    setActivePageId(next.id); setSelectedId(next.widgets[0]?.id ?? "");
+  };
+  const navigationForPages = (pages: DashboardPage[]) => {
+    const navigation=document.pageNavigation;
+    const free=(x:number,y:number)=>pages.every((page)=>!page.widgets.some((item)=>item.x<x+navigation.width&&item.x+item.width>x&&item.y<y+navigation.height&&item.y+item.height>y));
+    if(free(navigation.x,navigation.y))return navigation;
+    for(let y=0;y<=document.settings.rows-navigation.height;y++)for(let x=0;x<=document.settings.columns-navigation.width;x++)if(free(x,y))return{...navigation,x,y};
+    return null;
+  };
+  const addPage = () => { const page: DashboardPage = { id: crypto.randomUUID(), name: `Seite ${document.pages.length + 1}`, widgets: [] }; const pages=[...document.pages,page];const pageNavigation=navigationForPages(pages);if(!pageNavigation)return setNotice({kind:"error",text:"Für die Seitennavigation ist kein gemeinsamer freier Platz vorhanden."});patchDocument({pages,pageNavigation}); setActivePageId(page.id); setSelectedId(""); };
+  const duplicatePage = () => { const page: DashboardPage = { id: crypto.randomUUID(), name: `${activePage.name} Kopie`, widgets: activePage.widgets.map((item) => ({ ...structuredClone(item), id: crypto.randomUUID() })) }; const pages=[...document.pages,page];const pageNavigation=navigationForPages(pages);if(!pageNavigation)return setNotice({kind:"error",text:"Für die Seitennavigation ist kein gemeinsamer freier Platz vorhanden."});patchDocument({pages,pageNavigation}); setActivePageId(page.id); setSelectedId(page.widgets[0]?.id ?? ""); };
+  const movePage = (direction: number) => { const index=document.pages.findIndex((page)=>page.id===activePage.id); const target=index+direction; if(target<0||target>=document.pages.length)return; const pages=[...document.pages]; [pages[index],pages[target]]=[pages[target],pages[index]]; patchDocument({pages}); };
+  const deletePage = () => { if(document.pages.length===1)return; if(!confirm(`Seite „${activePage.name}“ wirklich löschen?`))return; const index=document.pages.findIndex((page)=>page.id===activePage.id); const pages=document.pages.filter((page)=>page.id!==activePage.id); const next=pages[Math.min(index,pages.length-1)]; patchDocument({pages}); setActivePageId(next.id); setSelectedId(next.widgets[0]?.id ?? ""); };
+  const addWidget = (type: WidgetType) => {
+    const item=createWidget(type, widgets.length);
+    for(let y=0;y<=document.settings.rows-item.height;y++) for(let x=0;x<=document.settings.columns-item.width;x++) {
+      const candidate={...item,x,y}; if(placementIsFree(document,activePage,candidate)){ patchWidgets((items)=>[...items,candidate]);setSelectedId(candidate.id);return; }
+    }
+    setNotice({kind:"error",text:"Kein freier Platz für dieses Widget."});
+  };
+  useEffect(()=>{if(dashboardId&&loadedDashboardId.current!==dashboardId)void selectDashboard(dashboardId);},[dashboardId]);
+
   return <main className="builder-shell">
     <header className="topbar">
       <div className="brand"><span className="brand-mark">d</span><div><strong>display</strong><small>Dashboard Studio</small></div></div>
       <input className="dashboard-name" value={document.name} onChange={(event) => patchDocument({ name: event.target.value })} aria-label="Dashboard-Name" />
       <div className="publish-controls">
-        <input type="password" value={passphrase} onChange={(event) => { const value = event.target.value; setPassphrase(value); if (value) localStorage.setItem("display-passphrase", value); else localStorage.removeItem("display-passphrase"); }} placeholder="PIN/Passphrase (min. 8)" title="Wird auf diesem Gerät gespeichert" />
+        <input type="password" value={passphrase} onChange={(event) => { const value = event.target.value; setPassphrase(value); if (value) { localStorage.setItem("display-passphrase", value); if(dashboardId)localStorage.setItem(`display-passphrase:${dashboardId}`,value); } else { localStorage.removeItem("display-passphrase"); if(dashboardId)localStorage.removeItem(`display-passphrase:${dashboardId}`); } }} placeholder="PIN/Passphrase (min. 8)" title="Wird auf diesem Gerät gespeichert" />
         <button className="button ghost" disabled={busy} onClick={() => save(false)}>Entwurf</button>
         <button className="button primary" disabled={busy} onClick={() => save(true)}>{busy ? "Bitte warten …" : "Veröffentlichen"}</button>
       </div>
@@ -278,9 +326,12 @@ export default function Builder() {
         </nav>
         {tab === "widgets" && <div className="panel-content">
           <p className="eyebrow">Bausteine</p><div className="widget-library">
-            {(["text", "clock", "image", "value", "weather"] as WidgetType[]).map((type) => <button draggable onDragStart={(event) => { const size = { width: type === "text" ? 6 : 4, height: 2 }; event.dataTransfer.setData("application/x-display-widget-type", type); setDragPayload({ kind: "new", widgetType: type, x: 0, y: 0, grabX: 0, grabY: 0, ...size }); setDragging(true); }} onDragEnd={finishDrag} key={type} onClick={() => { const item = createWidget(type, document.widgets.length); patchDocument({ widgets: [...document.widgets, item] }); setSelectedId(item.id); }}><span>{type === "text" ? "Tt" : type === "clock" ? "◷" : type === "image" ? "▧" : type === "value" ? "#" : "☀"}</span>{({ text: "Text", clock: "Uhr", image: "Bild", value: "API-Wert", weather: "Wetter" } as const)[type]}</button>)}
+            {(["text", "clock", "image", "value", "weather"] as WidgetType[]).map((type) => <button draggable onDragStart={(event) => { const size = { width: type === "text" ? 6 : 4, height: 2 }; event.dataTransfer.setData("application/x-display-widget-type", type); setDragPayload({ kind: "new", widgetType: type, x: 0, y: 0, grabX: 0, grabY: 0, ...size }); setDragging(true); }} onDragEnd={finishDrag} key={type} onClick={() => addWidget(type)}><span>{type === "text" ? "Tt" : type === "clock" ? "◷" : type === "image" ? "▧" : type === "value" ? "#" : "☀"}</span>{({ text: "Text", clock: "Uhr", image: "Bild", value: "API-Wert", weather: "Wetter" } as const)[type]}</button>)}
           </div>
-          <p className="eyebrow">Ebenen</p><div className="layers">{document.widgets.map((item) => <button className={item.id === selectedId ? "active" : ""} key={item.id} onClick={() => setSelectedId(item.id)}><span>{item.title}</span><small>{item.width}×{item.height}</small></button>)}</div>
+          <p className="eyebrow">Seiten</p><div className="page-tabs">{document.pages.map((page,index)=><button className={page.id===activePage.id?"active":""} key={page.id} onClick={()=>{setActivePageId(page.id);setSelectedId(page.widgets[0]?.id??"");}}>{index+1}. {page.name}</button>)}</div>
+          <div className="page-actions"><button onClick={addPage}>+</button><button onClick={duplicatePage}>Duplizieren</button><button onClick={()=>movePage(-1)}>↑</button><button onClick={()=>movePage(1)}>↓</button><button disabled={document.pages.length===1} onClick={deletePage}>×</button></div>
+          <label className="page-name">Seitenname<input value={activePage.name} onChange={(event)=>setDocument((current)=>({...current,pages:current.pages.map((page)=>page.id===activePage.id?{...page,name:event.target.value}:page)}))}/></label>
+          <p className="eyebrow">Ebenen</p><div className="layers">{widgets.map((item) => <button className={item.id === selectedId ? "active" : ""} key={item.id} onClick={() => setSelectedId(item.id)}><span>{item.title}</span><small>{item.width}×{item.height}</small></button>)}</div>
         </div>}
         {tab === "data" && <div className="panel-content">
           <button className="button wide" onClick={() => patchDocument({ dataSources: [...document.dataSources, { id: crypto.randomUUID(), name: "Neue API", method: "GET", url: "https://", headers: {}, auth: { type: "none" } }] })}>+ Datenquelle</button>
@@ -304,12 +355,15 @@ export default function Builder() {
           </div>)}
         </div>}
         {tab === "settings" && <div className="panel-content form-stack">
-          <p className="eyebrow">Meine Displays</p><select value={dashboardId} onChange={(event) => selectDashboard(event.target.value)}><option value="">Neues Dashboard</option>{dashboards.map((item) => <option value={item.id} key={item.id}>{item.name}{item.activeVersion ? ` · v${item.activeVersion}` : " · Entwurf"}</option>)}</select>
+          <p className="eyebrow">Meine Displays</p><select value={dashboardId} disabled={busy} onChange={(event) => void selectDashboard(event.target.value)}><option value="">+ Neues Dashboard</option>{dashboards.map((item) => <option value={item.id} key={item.id}>{item.name}{item.activeVersion ? ` · v${item.activeVersion}` : " · Entwurf"}</option>)}</select>
           <label>Konfigurationsprüfung (Sek.)<input type="number" min="10" value={document.settings.configPollSeconds} onChange={(e) => patchDocument({ settings: { ...document.settings, configPollSeconds: Number(e.target.value) } })} /></label>
           <label>Daten-Standard (Sek.)<input type="number" min="10" value={document.settings.dataPollSeconds} onChange={(e) => patchDocument({ settings: { ...document.settings, dataPollSeconds: Number(e.target.value) } })} /></label>
           <label>Hintergrund<input type="color" value={document.settings.background} onChange={(e) => patchDocument({ settings: { ...document.settings, background: e.target.value } })} /></label>
-          <p className="eyebrow">Vorlagen</p>{templates.map((template) => <button className="template" key={template.name} onClick={() => { const next = template.create(); setDocument(next); setSelectedId(next.widgets[0]?.id ?? ""); }}>{template.name}</button>)}
-          {customTemplates.map((template, index) => <button className="template" key={`${template.name}-${index}`} onClick={() => { const next = structuredClone(template.document); next.widgets.forEach((item) => { item.id=crypto.randomUUID(); }); next.dataSources.forEach((item) => { const old=item.id; item.id=crypto.randomUUID(); next.widgets.filter((widget) => widget.dataSourceId===old).forEach((widget) => { widget.dataSourceId=item.id; }); item.auth={type:"none"}; }); setDocument(next); setSelectedId(next.widgets[0]?.id ?? ""); }}>{template.name} · eigen</button>)}
+          <p className="eyebrow">Seitennavigation</p><label className="check-label"><input type="checkbox" checked={document.pageNavigation.visible} onChange={(e)=>patchDocument({pageNavigation:{...document.pageNavigation,visible:e.target.checked}})}/> Ab zwei Seiten anzeigen</label>
+          <div className="quad">{(["x","y","width","height"] as const).map((key)=><label key={key}>{key}<input type="number" min={key==="width"||key==="height"?1:0} value={document.pageNavigation[key]} onChange={(e)=>{const next={...document.pageNavigation,[key]:Number(e.target.value)};const inBounds=next.x>=0&&next.y>=0&&next.width>0&&next.height>0&&next.x+next.width<=document.settings.columns&&next.y+next.height<=document.settings.rows;const free=document.pages.every((page)=>!page.widgets.some((item)=>item.x<next.x+next.width&&item.x+item.width>next.x&&item.y<next.y+next.height&&item.y+item.height>next.y));if(inBounds&&free)patchDocument({pageNavigation:next});else setNotice({kind:"error",text:"Navigation benötigt einen freien Rasterbereich."});}}/></label>)}</div>
+          <div className="inline colors"><label>Fläche<input type="color" value={document.pageNavigation.style.background} onChange={(e)=>patchDocument({pageNavigation:{...document.pageNavigation,style:{...document.pageNavigation.style,background:e.target.value}}})}/></label><label>Pfeile<input type="color" value={document.pageNavigation.style.foreground} onChange={(e)=>patchDocument({pageNavigation:{...document.pageNavigation,style:{...document.pageNavigation.style,foreground:e.target.value}}})}/></label></div>
+          <p className="eyebrow">Vorlagen</p>{templates.map((template) => <button className="template" key={template.name} onClick={() => { const next = template.create(); setDocument(next); setActivePageId(next.pages[0].id); setSelectedId(next.pages[0].widgets[0]?.id ?? ""); }}>{template.name}</button>)}
+          {customTemplates.map((template, index) => <button className="template" key={`${template.name}-${index}`} onClick={() => { const next = structuredClone(template.document); next.pages.forEach((page)=>{page.id=crypto.randomUUID();page.widgets.forEach((item)=>{item.id=crypto.randomUUID();});}); next.dataSources.forEach((item) => { const old=item.id; item.id=crypto.randomUUID(); next.pages.flatMap((page)=>page.widgets).filter((widget) => widget.dataSourceId===old).forEach((widget) => { widget.dataSourceId=item.id; }); item.auth={type:"none"}; }); setDocument(next); setActivePageId(next.pages[0].id); setSelectedId(next.pages[0].widgets[0]?.id ?? ""); }}>{template.name} · eigen</button>)}
           <button className="text-button" onClick={() => { const clean=structuredClone(document); clean.dataSources.forEach((source) => { source.auth={type:"none"}; }); const next=[...customTemplates,{name:document.name,document:clean}]; setCustomTemplates(next); localStorage.setItem("display-templates",JSON.stringify(next)); setNotice({kind:"ok",text:"Template ohne Zugangsdaten gespeichert."}); }}>Aktuelles Dashboard als Template speichern →</button>
           {dashboardId && <><p className="eyebrow">Projekt</p><code>{dashboardId}</code><button className="text-button" onClick={loadDraft}>Entwurf mit aktueller Passphrase laden</button><button className="button wide" onClick={createPairing}>Android koppeln</button>{pairingCode && <><small>10 Minuten gültiger Code</small><code>{pairingCode}</code></>}<button className="danger-button" onClick={deleteDashboard}>Dashboard löschen</button></>}
         </div>}
@@ -317,7 +371,13 @@ export default function Builder() {
 
       <section className="canvas-area">
         <div className="canvas-toolbar"><div className="studio-tabs"><button className={studioMode === "edit" ? "active" : ""} onClick={() => setStudioMode("edit")}>Bearbeiten</button><button className={studioMode === "preview" ? "active" : ""} onClick={() => setStudioMode("preview")}>Vorschau</button></div>{studioMode === "edit" ? <><button className="panel-toggle" onClick={() => setLeftOpen((open) => !open)} aria-label="Linke Seitenleiste umschalten">{leftOpen ? "‹" : "›"}<span>Bausteine</span></button><span><i /> Live Preview</span><span>1920 × 1080</span><button className="panel-toggle right" onClick={() => setRightOpen((open) => !open)} aria-label="Rechte Seitenleiste umschalten"><span>Eigenschaften</span>{rightOpen ? "›" : "‹"}</button></> : <><div className="device-tabs">{(Object.keys(previewDevices) as PreviewDevice[]).map((device) => <button className={previewDevice === device ? "active" : ""} key={device} onClick={() => setPreviewDevice(device)}>{previewDevices[device].label}</button>)}</div><span className="device-size">{previewDevices[previewDevice].size}</span></>}</div>
-        <div className={`display-frame device-${previewDevice}${dragging ? " is-dragging" : ""}`} style={studioMode === "preview" ? { aspectRatio: previewDevices[previewDevice].ratio } : undefined}><div className="display-grid" onDragOver={studioMode === "edit" ? dragOverCanvas : undefined} onDragLeave={studioMode === "edit" ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPlacement(null); } : undefined} onDrop={studioMode === "edit" ? dropOnCanvas : undefined} style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>{document.widgets.map((item) => <PreviewWidget key={item.id} widget={item} data={previewData} interactive={studioMode === "edit"} selected={studioMode === "edit" && item.id === selectedId} onSelect={() => setSelectedId(item.id)} onDragStart={(event) => { event.dataTransfer.setData("application/x-display-widget", item.id); event.dataTransfer.effectAllowed = "move"; const elementRect = event.currentTarget.getBoundingClientRect(); const gridRect = event.currentTarget.closest(".display-grid")?.getBoundingClientRect(); const cellWidth = (gridRect?.width ?? elementRect.width) / document.settings.columns; const cellHeight = (gridRect?.height ?? elementRect.height) / document.settings.rows; setDragPayload({ kind: "existing", id: item.id, x: item.x, y: item.y, width: item.width, height: item.height, grabX: Math.max(0, Math.min(item.width - 1, Math.floor((event.clientX - elementRect.left) / cellWidth))), grabY: Math.max(0, Math.min(item.height - 1, Math.floor((event.clientY - elementRect.top) / cellHeight))) }); setDragging(true); }} onDragEnd={finishDrag} onResizeStart={(event, direction) => startResize(event, item, direction)} />)}{studioMode === "edit" && placement && <div className="placement-preview" style={{ gridColumn: `${placement.x + 1} / span ${placement.width}`, gridRow: `${placement.y + 1} / span ${placement.height}` }}><span>{placement.width} × {placement.height}</span></div>}</div></div>
+        <div className={`display-frame device-${previewDevice}${dragging ? " is-dragging" : ""}`} style={studioMode === "preview" ? { aspectRatio: previewDevices[previewDevice].ratio } : undefined} onPointerDown={studioMode==="preview"?(event)=>{swipeStart.current={x:event.clientX,y:event.clientY};}:undefined} onPointerUp={studioMode==="preview"?(event)=>{const start=swipeStart.current;swipeStart.current=null;if(!start)return;const dx=event.clientX-start.x,dy=event.clientY-start.y;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.4)switchPage(dx<0?1:-1);}:undefined}>
+          <div className="display-grid" onDragOver={studioMode === "edit" ? dragOverCanvas : undefined} onDragLeave={studioMode === "edit" ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPlacement(null); } : undefined} onDrop={studioMode === "edit" ? dropOnCanvas : undefined} style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>
+            {widgets.map((item) => <PreviewWidget key={item.id} widget={item} data={previewData} interactive={studioMode === "edit"} selected={studioMode === "edit" && item.id === selectedId} onSelect={() => setSelectedId(item.id)} onDragStart={(event) => { event.dataTransfer.setData("application/x-display-widget", item.id); event.dataTransfer.effectAllowed = "move"; const elementRect = event.currentTarget.getBoundingClientRect(); const gridRect = event.currentTarget.closest(".display-grid")?.getBoundingClientRect(); const cellWidth = (gridRect?.width ?? elementRect.width) / document.settings.columns; const cellHeight = (gridRect?.height ?? elementRect.height) / document.settings.rows; setDragPayload({ kind: "existing", id: item.id, x: item.x, y: item.y, width: item.width, height: item.height, grabX: Math.max(0, Math.min(item.width - 1, Math.floor((event.clientX - elementRect.left) / cellWidth))), grabY: Math.max(0, Math.min(item.height - 1, Math.floor((event.clientY - elementRect.top) / cellHeight))) }); setDragging(true); }} onDragEnd={finishDrag} onResizeStart={(event, direction) => startResize(event, item, direction)} />)}
+            {document.pages.length>1&&document.pageNavigation.visible&&<div className="page-navigation" style={{gridColumn:`${document.pageNavigation.x+1} / span ${document.pageNavigation.width}`,gridRow:`${document.pageNavigation.y+1} / span ${document.pageNavigation.height}`,background:document.pageNavigation.style.background,color:document.pageNavigation.style.foreground}}><button onClick={()=>switchPage(-1)} aria-label="Vorherige Seite">←</button><span>{document.pages.findIndex((page)=>page.id===activePage.id)+1} / {document.pages.length}</span><button onClick={()=>switchPage(1)} aria-label="Nächste Seite">→</button></div>}
+            {studioMode === "edit" && placement && <div className={`placement-preview${placement.valid?"":" invalid"}`} style={{ gridColumn: `${placement.x + 1} / span ${placement.width}`, gridRow: `${placement.y + 1} / span ${placement.height}` }}><span>{placement.valid?`${placement.width} × ${placement.height}`:"Belegt"}</span></div>}
+          </div>
+        </div>
         {notice && <div className={`notice ${notice.kind}`}>{notice.text}</div>}
         {displayUrl && <div className="share-bar"><span>Client-URL</span><code>{displayUrl}</code><button onClick={() => navigator.clipboard.writeText(displayUrl)}>Kopieren</button></div>}
       </section>
@@ -328,11 +388,11 @@ export default function Builder() {
         {selected.type === "image" && <label>Bild-URL<input value={selected.imageUrl ?? ""} onChange={(e) => patchWidget({ imageUrl: e.target.value })} /></label>}
         {(selected.type === "value" || selected.type === "weather") && <><label>Datenquelle<select value={selected.dataSourceId ?? ""} onChange={(e) => patchWidget({ dataSourceId: e.target.value })}><option value="">Auswählen …</option>{document.dataSources.map((source) => <option value={source.id} key={source.id}>{source.name}</option>)}</select></label><label>JSON-Pfad<input value={selected.jsonPath ?? ""} onChange={(e) => patchWidget({ jsonPath: e.target.value })} /></label><div className="inline"><label>Format<select value={selected.format ?? "text"} onChange={(e) => patchWidget({ format: e.target.value as Widget["format"] })}><option value="text">Text</option><option value="number">Zahl</option><option value="date">Datum</option><option value="temperature">Temperatur</option></select></label><label>Suffix<input value={selected.suffix ?? ""} onChange={(e) => patchWidget({ suffix: e.target.value })} /></label></div></>}
         <p className="canvas-hint">Im Canvas ziehen · An Kanten oder Ecken skalieren</p>
-        <details className="pro-settings"><summary>Profi: Position & Größe</summary><div className="quad">{(["x","y","width","height"] as const).map((key) => <label key={key}>{key}<input type="number" min={key === "width" || key === "height" ? 1 : 0} max={key === "x" || key === "width" ? 12 : 8} value={selected[key]} onChange={(e) => patchWidget({ [key]: Number(e.target.value) })} /></label>)}</div></details>
+        <details className="pro-settings"><summary>Profi: Position & Größe</summary><div className="quad">{(["x","y","width","height"] as const).map((key) => <label key={key}>{key}<input type="number" min={key === "width" || key === "height" ? 1 : 0} max={key === "x" || key === "width" ? 12 : 8} value={selected[key]} onChange={(e) => {const next={...selected,[key]:Number(e.target.value)};if(placementIsFree(document,activePage,next,selected.id))patchWidget({[key]:Number(e.target.value)});else setNotice({kind:"error",text:"Position ist belegt oder außerhalb des Rasters."});}} /></label>)}</div></details>
         <p className="eyebrow">Darstellung</p><div className="inline colors"><label>Fläche<input type="color" value={selected.style.background} onChange={(e) => patchStyle({ background: e.target.value })} /></label><label>Text<input type="color" value={selected.style.foreground} onChange={(e) => patchStyle({ foreground: e.target.value })} /></label></div>
         <label>Animation<select value={selected.animation} onChange={(e) => patchWidget({ animation: e.target.value as Widget["animation"] })}><option value="none">Keine</option><option value="pulse">Pulse</option><option value="float">Float</option><option value="glow">Glow</option></select></label>
         <label>Bei Fehler<select value={selected.errorBehavior} onChange={(e) => patchWidget({ errorBehavior: e.target.value as Widget["errorBehavior"] })}><option value="stale">Letzten Wert</option><option value="empty">Leer</option><option value="error">Fehler anzeigen</option></select></label>
-        <button className="danger-button" onClick={() => { patchDocument({ widgets: document.widgets.filter((item) => item.id !== selected.id) }); setSelectedId(""); }}>Widget löschen</button>
+        <button className="danger-button" onClick={() => { patchWidgets((items)=>items.filter((item) => item.id !== selected.id)); setSelectedId(""); }}>Widget löschen</button>
       </div> : <p className="empty-state">Wähle ein Widget in der Vorschau aus.</p>}</aside>
     </section>
   </main>;

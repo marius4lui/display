@@ -13,6 +13,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -53,6 +54,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -156,14 +158,35 @@ private fun DashboardScreen(controller: DashboardController) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text("display", fontSize = 42.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)); Text(controller.status, color = Color(0xFF8B91A7)); TextButton(onClick = controller::reset) { Text("Verbindung zurücksetzen") } } }
         return
     }
-    Box(Modifier.fillMaxSize().background(parseColor(dashboard.settings.background)).padding(12.dp)) {
+    var pageIndex by remember(dashboard) { mutableStateOf(0) }
+    var dragDistance by remember { mutableStateOf(0f) }
+    val switchPage: (Int) -> Unit = { direction -> pageIndex = (pageIndex + direction + dashboard.pages.size) % dashboard.pages.size }
+    val page = dashboard.pages[pageIndex.coerceIn(0, dashboard.pages.lastIndex)]
+    Box(Modifier.fillMaxSize().background(parseColor(dashboard.settings.background)).padding(12.dp).pointerInput(dashboard.pages.size) {
+        detectHorizontalDragGestures(
+            onDragStart = { dragDistance = 0f },
+            onHorizontalDrag = { change, amount -> change.consume(); dragDistance += amount },
+            onDragEnd = { if (kotlin.math.abs(dragDistance) > 80f) switchPage(if (dragDistance < 0) 1 else -1); dragDistance = 0f },
+            onDragCancel = { dragDistance = 0f },
+        )
+    }) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val cellWidth = maxWidth / dashboard.settings.columns
             val cellHeight = maxHeight / dashboard.settings.rows
-            dashboard.widgets.forEach { widget ->
+            page.widgets.forEach { widget ->
                 val width = cellWidth * widget.width.coerceAtMost(dashboard.settings.columns - widget.x)
                 val height = cellHeight * widget.height.coerceAtMost(dashboard.settings.rows - widget.y)
                 DashboardWidgetView(widget, controller.values[widget.dataSourceId], Modifier.offset(cellWidth * widget.x, cellHeight * widget.y).size(width - 6.dp, height - 6.dp))
+            }
+            if (dashboard.pages.size > 1 && dashboard.pageNavigation.visible) {
+                val navigation = dashboard.pageNavigation
+                val width = cellWidth * navigation.width.coerceAtMost(dashboard.settings.columns - navigation.x)
+                val height = cellHeight * navigation.height.coerceAtMost(dashboard.settings.rows - navigation.y)
+                Row(Modifier.offset(cellWidth * navigation.x, cellHeight * navigation.y).size(width - 6.dp, height - 6.dp).clip(RoundedCornerShape(14.dp)).background(parseColor(navigation.style.background)), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    TextButton(onClick = { switchPage(-1) }, modifier = Modifier.weight(1f).fillMaxSize()) { Text("←", color = parseColor(navigation.style.foreground), fontSize = 26.sp) }
+                    Text("${pageIndex + 1} / ${dashboard.pages.size}", color = parseColor(navigation.style.foreground).copy(alpha = .7f), fontSize = 11.sp)
+                    TextButton(onClick = { switchPage(1) }, modifier = Modifier.weight(1f).fillMaxSize()) { Text("→", color = parseColor(navigation.style.foreground), fontSize = 26.sp) }
+                }
             }
         }
         Row(Modifier.align(Alignment.BottomEnd).clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha=.48f)).padding(horizontal=8.dp, vertical=4.dp), verticalAlignment = Alignment.CenterVertically) {
