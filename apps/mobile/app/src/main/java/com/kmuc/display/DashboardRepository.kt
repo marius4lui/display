@@ -16,9 +16,9 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
-import javax.crypto.AEADBadTagException
 
 data class RuntimeValue(val value: Any?, val stale: Boolean = false, val error: String? = null)
 private data class HttpResult(val status: Int, val body: String, val etag: String?)
@@ -28,38 +28,50 @@ class DashboardController(context: Context) {
     var dashboard by mutableStateOf<DashboardDocument?>(null); private set
     var status by mutableStateOf("Nicht verbunden"); private set
     var version by mutableStateOf(0); private set
-    var configured by mutableStateOf(store.url() != null && store.passphrase() != null && store.deviceToken() != null); private set
+    var configured by mutableStateOf(store.url() != null && store.deviceToken() != null); private set
     val values = mutableStateMapOf<String, RuntimeValue>()
     private val sourceLastRun = ConcurrentHashMap<String, Long>()
     private var job: Job? = null
 
-    fun configure(url: String, pairingCode: String, passphrase: String, configPollOverride: Int?, dataPollOverride: Int?, scope: CoroutineScope) {
+    fun connectWithCode(url: String, pairingCode: String, configPollOverride: Int?, dataPollOverride: Int?, scope: CoroutineScope) {
         require(url.startsWith("http://") || url.startsWith("https://")) { "Bitte eine vollständige HTTP(S)-URL eingeben." }
-        require(passphrase.length >= 8) { "PIN/Passphrase muss mindestens 8 Zeichen lang sein." }
         require(pairingCode.matches(Regex("\\d{6}"))) { "Pairing-Code muss 6-stellig sein." }
         status = "Gerät wird gekoppelt …"
         scope.launch {
             try {
                 val token = pair(url.trim(), pairingCode)
-                store.saveConnection(url.trim(), token, passphrase, configPollOverride, dataPollOverride)
+                store.saveConnection(url.trim(), token, configPollOverride, dataPollOverride)
                 configured = true
                 start(scope)
             } catch (error: Exception) { status = "Pairing fehlgeschlagen · ${error.userMessage()}" }
         }
     }
 
+    fun browserConnectUrl(displayUrl: String): String {
+        require(displayUrl.startsWith("http://") || displayUrl.startsWith("https://")) { "Bitte eine vollständige Dashboard-URL eingeben." }
+        val parsed = URL(displayUrl.trim()); val displayId = parsed.path.trimEnd('/').substringAfterLast('/')
+        require(displayId.matches(Regex("[A-Za-z0-9_-]{8,32}"))) { "Dashboard-URL ist ungültig." }
+        val bytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        val state = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes); store.savePendingState(state)
+        return "${parsed.protocol}://${parsed.authority}/connect/$displayId?state=$state"
+    }
+
+    fun acceptBrowserConnection(state: String, url: String, token: String, scope: CoroutineScope): Boolean {
+        if (!store.consumePendingState(state) || !url.startsWith("http") || token.length < 20) return false
+        store.saveConnection(url, token); configured = true; status = "Verbunden"; start(scope); return true
+    }
+
     fun start(scope: CoroutineScope) {
         job?.cancel()
         val url = store.url() ?: return
-        val secret = store.passphrase() ?: return
         job = scope.launch {
-            loadCached(secret)
+            loadCached()
             var lastConfigurationCheck = 0L
             while (isActive) {
                 val now = System.currentTimeMillis()
                 val configInterval = (store.configPollOverride() ?: dashboard?.settings?.configPollSeconds ?: 30).coerceAtLeast(10) * 1_000L
                 if (now - lastConfigurationCheck >= configInterval) {
-                    checkConfiguration(url, secret)
+                    checkConfiguration(url)
                     lastConfigurationCheck = now
                 }
                 refreshDueSources()
@@ -70,17 +82,17 @@ class DashboardController(context: Context) {
 
     fun reset() { job?.cancel(); store.clear(); configured = false; dashboard = null; values.clear(); status = "Nicht verbunden" }
 
-    private fun loadCached(secret: String) {
-        val cached = store.cachedEnvelope() ?: return
+    private fun loadCached() {
+        val cached = store.cachedDocument() ?: return
         runCatching {
             val published = parsePublishedDashboard(cached)
-            dashboard = parseDashboardDocument(DashboardCrypto.decrypt(published.envelope, secret))
+            dashboard = published.document
             version = published.version
             status = "Offline-Cache · Version $version"
         }
     }
 
-    private suspend fun checkConfiguration(url: String, secret: String) {
+    private suspend fun checkConfiguration(url: String) {
         try {
             status = "Prüfe Konfiguration …"
             val response = request(url, store.etag())
@@ -90,10 +102,9 @@ class DashboardController(context: Context) {
             }
             val published = parsePublishedDashboard(response.body)
             if (published.version != version || dashboard == null) {
-                val candidate = parseDashboardDocument(DashboardCrypto.decrypt(published.envelope, secret))
-                dashboard = candidate
+                dashboard = published.document
                 version = published.version
-                store.cacheEnvelope(response.body)
+                store.cacheDocument(response.body)
                 sourceLastRun.clear()
             }
             store.saveEtag(response.etag)
@@ -163,9 +174,4 @@ class DashboardController(context: Context) {
     }
 }
 
-private fun Throwable.userMessage(): String = when {
-    this is AEADBadTagException || message?.contains("BAD_DECRYPT", ignoreCase = true) == true ->
-        "Entschlüsselung fehlgeschlagen. Die PIN/Passphrase passt nicht zu diesem Dashboard. Bitte prüfe auch die Dashboard-URL."
-    message.isNullOrBlank() -> "Dashboard nicht verfügbar"
-    else -> message.orEmpty()
-}
+private fun Throwable.userMessage(): String = message?.takeIf { it.isNotBlank() } ?: "Dashboard nicht verfügbar"

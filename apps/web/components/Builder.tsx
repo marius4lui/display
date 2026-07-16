@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { addDefaultWeatherWidgets, blankDashboard, createWidget, formatValue, normalizeDashboard, placementIsFree, type DashboardDocument, type DashboardPage, type DataSource, type LegacyDashboardDocument, type Widget, type WidgetType, valueAtPath, weatherTemplate } from "../lib/dashboard";
-import { decryptDocument, encryptDocument, type EncryptedEnvelope } from "../lib/crypto";
 
 const API = "";
 type Notice = { kind: "ok" | "error"; text: string } | null;
@@ -54,7 +53,6 @@ export default function Builder() {
   const [activePageId, setActivePageId] = useState(document.pages[0].id);
   const [selectedId, setSelectedId] = useState(document.pages[0].widgets[0]?.id ?? "");
   const [tab, setTab] = useState<"widgets" | "data" | "settings">("widgets");
-  const [passphrase, setPassphrase] = useState("");
   const [dashboardId, setDashboardId] = useState("");
   const [displayUrl, setDisplayUrl] = useState("");
   const [pairingCode, setPairingCode] = useState("");
@@ -77,7 +75,6 @@ export default function Builder() {
   const loadedDashboardId = useRef("");
 
   useEffect(() => {
-    setPassphrase(localStorage.getItem("display-passphrase") ?? "");
     const saved = localStorage.getItem("display-project");
     if (!saved) return;
     try {
@@ -104,20 +101,17 @@ export default function Builder() {
   const save = async (publish: boolean) => {
     setNotice(null); setBusy(true);
     try {
-      const envelope = await encryptDocument(document, passphrase);
       let id = dashboardId; let url = displayUrl;
       if (!id) {
-        const response = await fetch(`${API}/api/dashboards`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ envelope, name: document.name }) });
+        const response = await fetch(`${API}/api/dashboards`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ document, name: document.name }) });
         if (!response.ok) throw new Error((await response.json()).error?.message ?? "Dashboard konnte nicht erstellt werden");
         const result = await response.json() as { id: string; displayUrl: string };
         id = result.id; url = result.displayUrl;
         setDashboardId(id); setDisplayUrl(url);
-        localStorage.setItem(`display-passphrase:${id}`, passphrase);
         setDashboards((current) => [{ id, name: document.name, activeVersion: null, updatedAt: new Date().toISOString() }, ...current]);
         localStorage.setItem("display-project", JSON.stringify({ dashboardId: id, displayUrl: url }));
       } else {
-        localStorage.setItem(`display-passphrase:${id}`, passphrase);
-        const response = await fetch(`${API}/api/dashboards/${id}/draft`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ envelope, name: document.name }) });
+        const response = await fetch(`${API}/api/dashboards/${id}/draft`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ document, name: document.name }) });
         if (!response.ok) throw new Error((await response.json()).error?.message ?? "Entwurf konnte nicht gespeichert werden");
       }
       if (publish) {
@@ -125,7 +119,7 @@ export default function Builder() {
         if (!response.ok) throw new Error((await response.json()).error?.message ?? "Veröffentlichung fehlgeschlagen");
         const result = await response.json() as { version: number };
         setNotice({ kind: "ok", text: `Version ${result.version} ist live.` });
-      } else setNotice({ kind: "ok", text: "Verschlüsselter Entwurf gespeichert." });
+      } else setNotice({ kind: "ok", text: "Entwurf gespeichert." });
     } catch (error) { setNotice({ kind: "error", text: error instanceof Error ? error.message : "Unbekannter Fehler" }); }
     finally { setBusy(false); }
   };
@@ -133,13 +127,13 @@ export default function Builder() {
   const loadDraft = async () => {
     setBusy(true); setNotice(null);
     try {
-      if (!dashboardId || !passphrase) throw new Error("Projekt oder PIN fehlt.");
+      if (!dashboardId) throw new Error("Projekt fehlt.");
       const response = await fetch(`${API}/api/dashboards/${dashboardId}/draft`);
       if (!response.ok) throw new Error((await response.json()).error?.message ?? "Entwurf konnte nicht geladen werden");
-      const result = await response.json() as { envelope: EncryptedEnvelope };
-      const loaded = normalizeDashboard(await decryptDocument<DashboardDocument | LegacyDashboardDocument>(result.envelope, passphrase));
-      setDocument(loaded); setActivePageId(loaded.pages[0].id); setSelectedId(loaded.pages[0].widgets[0]?.id ?? ""); setNotice({ kind: "ok", text: "Entwurf entschlüsselt und geladen." });
-    } catch (error) { setNotice({ kind: "error", text: error instanceof Error ? error.message : "Entschlüsselung fehlgeschlagen" }); }
+      const result = await response.json() as { document: DashboardDocument | LegacyDashboardDocument };
+      const loaded = normalizeDashboard(result.document);
+      setDocument(loaded); setActivePageId(loaded.pages[0].id); setSelectedId(loaded.pages[0].widgets[0]?.id ?? ""); setNotice({ kind: "ok", text: "Entwurf geladen." });
+    } catch (error) { setNotice({ kind: "error", text: error instanceof Error ? error.message : "Entwurf konnte nicht geladen werden" }); }
     finally { setBusy(false); }
   };
 
@@ -154,16 +148,14 @@ export default function Builder() {
     if (!id) { const next=blankDashboard(); setDashboardId(""); setDisplayUrl(""); setPairingCode(""); setDocument(next); setActivePageId(next.pages[0].id); setSelectedId(next.pages[0].widgets[0]?.id ?? ""); localStorage.removeItem("display-project"); return; }
     loadedDashboardId.current=id;
     const url = `${location.origin}/d/${id}`; setDashboardId(id); setDisplayUrl(url); setPairingCode(""); localStorage.setItem("display-project", JSON.stringify({ dashboardId: id, displayUrl: url }));
-    const savedSecret = localStorage.getItem(`display-passphrase:${id}`) ?? localStorage.getItem("display-passphrase") ?? "";
-    if (savedSecret) setPassphrase(savedSecret);
     setBusy(true);
     try {
       const response = await fetch(`${API}/api/dashboards/${id}/draft`);
       if (!response.ok) throw new Error("Entwurf konnte nicht geladen werden");
-      const result = await response.json() as { envelope: EncryptedEnvelope };
-      const loaded = normalizeDashboard(await decryptDocument<DashboardDocument | LegacyDashboardDocument>(result.envelope, savedSecret));
+      const result = await response.json() as { document: DashboardDocument | LegacyDashboardDocument };
+      const loaded = normalizeDashboard(result.document);
       setDocument(loaded); setActivePageId(loaded.pages[0].id); setSelectedId(loaded.pages[0].widgets[0]?.id ?? "");
-    } catch (error) { setNotice({ kind: "error", text: savedSecret ? "Dashboard konnte nicht entschlüsselt werden. Passphrase prüfen." : "Passphrase eingeben und Entwurf laden." }); }
+    } catch (error) { setNotice({ kind: "error", text: error instanceof Error ? error.message : "Dashboard konnte nicht geladen werden." }); }
     finally { setBusy(false); }
   };
 
@@ -311,7 +303,6 @@ export default function Builder() {
       <div className="brand"><span className="brand-mark">d</span><div><strong>display</strong><small>Dashboard Studio</small></div></div>
       <input className="dashboard-name" value={document.name} onChange={(event) => patchDocument({ name: event.target.value })} aria-label="Dashboard-Name" />
       <div className="publish-controls">
-        <input type="password" value={passphrase} onChange={(event) => { const value = event.target.value; setPassphrase(value); if (value) { localStorage.setItem("display-passphrase", value); if(dashboardId)localStorage.setItem(`display-passphrase:${dashboardId}`,value); } else { localStorage.removeItem("display-passphrase"); if(dashboardId)localStorage.removeItem(`display-passphrase:${dashboardId}`); } }} placeholder="PIN/Passphrase (min. 8)" title="Wird auf diesem Gerät gespeichert" />
         <button className="button ghost" disabled={busy} onClick={() => save(false)}>Entwurf</button>
         <button className="button primary" disabled={busy} onClick={() => save(true)}>{busy ? "Bitte warten …" : "Veröffentlichen"}</button>
       </div>
@@ -365,7 +356,7 @@ export default function Builder() {
           <p className="eyebrow">Vorlagen</p>{templates.map((template) => <button className="template" key={template.name} onClick={() => { const next = template.create(); setDocument(next); setActivePageId(next.pages[0].id); setSelectedId(next.pages[0].widgets[0]?.id ?? ""); }}>{template.name}</button>)}
           {customTemplates.map((template, index) => <button className="template" key={`${template.name}-${index}`} onClick={() => { const next = structuredClone(template.document); next.pages.forEach((page)=>{page.id=crypto.randomUUID();page.widgets.forEach((item)=>{item.id=crypto.randomUUID();});}); next.dataSources.forEach((item) => { const old=item.id; item.id=crypto.randomUUID(); next.pages.flatMap((page)=>page.widgets).filter((widget) => widget.dataSourceId===old).forEach((widget) => { widget.dataSourceId=item.id; }); item.auth={type:"none"}; }); setDocument(next); setActivePageId(next.pages[0].id); setSelectedId(next.pages[0].widgets[0]?.id ?? ""); }}>{template.name} · eigen</button>)}
           <button className="text-button" onClick={() => { const clean=structuredClone(document); clean.dataSources.forEach((source) => { source.auth={type:"none"}; }); const next=[...customTemplates,{name:document.name,document:clean}]; setCustomTemplates(next); localStorage.setItem("display-templates",JSON.stringify(next)); setNotice({kind:"ok",text:"Template ohne Zugangsdaten gespeichert."}); }}>Aktuelles Dashboard als Template speichern →</button>
-          {dashboardId && <><p className="eyebrow">Projekt</p><code>{dashboardId}</code><button className="text-button" onClick={loadDraft}>Entwurf mit aktueller Passphrase laden</button><button className="button wide" onClick={createPairing}>Android koppeln</button>{pairingCode && <><small>10 Minuten gültiger Code</small><code>{pairingCode}</code></>}<button className="danger-button" onClick={deleteDashboard}>Dashboard löschen</button></>}
+          {dashboardId && <><p className="eyebrow">Projekt</p><code>{dashboardId}</code><button className="text-button" onClick={loadDraft}>Entwurf neu laden</button><button className="button wide" onClick={createPairing}>Fallback-Code erzeugen</button>{pairingCode && <><small>10 Minuten gültiger Kopplungscode</small><code>{pairingCode}</code></>}<button className="danger-button" onClick={deleteDashboard}>Dashboard löschen</button></>}
         </div>}
       </aside>
 

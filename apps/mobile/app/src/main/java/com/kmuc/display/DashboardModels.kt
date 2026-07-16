@@ -3,16 +3,7 @@ package com.kmuc.display
 import org.json.JSONObject
 import org.json.JSONArray
 
-data class Envelope(
-    val schemaVersion: Int,
-    val encryptionVersion: Int,
-    val iterations: Int,
-    val salt: String,
-    val iv: String,
-    val ciphertext: String,
-)
-
-data class PublishedDashboard(val version: Int, val envelope: Envelope)
+data class PublishedDashboard(val version: Int, val document: DashboardDocument)
 
 data class DashboardSettings(
     val configPollSeconds: Int = 30,
@@ -90,17 +81,9 @@ private fun JSONObject.optionalString(key: String): String? = if (has(key) && !i
 
 fun parsePublishedDashboard(json: String): PublishedDashboard {
     val root = JSONObject(json)
-    val item = root.getJSONObject("envelope")
     return PublishedDashboard(
         version = root.getInt("version"),
-        envelope = Envelope(
-            schemaVersion = item.getInt("schemaVersion"),
-            encryptionVersion = item.getInt("encryptionVersion"),
-            iterations = item.getInt("iterations"),
-            salt = item.getString("salt"),
-            iv = item.getString("iv"),
-            ciphertext = item.getString("ciphertext"),
-        ),
+        document = parseDashboardDocument(root.getJSONObject("document").toString()),
     )
 }
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseEnvelope } from "../../../lib/server/envelope";
+import { parseDashboardDocument } from "../../../lib/server/document";
 import { apiError, jsonBody, publicId } from "../../../lib/server/http";
 import { publicUrl } from "../../../lib/server/public-url";
 import { userContext } from "../../../lib/server/supabase";
@@ -13,11 +13,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const context = await userContext(request); if (!context) return apiError("UNAUTHENTICATED", "Anmeldung erforderlich", 401);
-  const body = await jsonBody(request); let envelope; try { envelope = parseEnvelope(body?.envelope); } catch (e) { return apiError("INVALID_ENVELOPE", (e as Error).message); }
+  const body = await jsonBody(request); let document; try { document = parseDashboardDocument(body?.document); } catch (e) { return apiError("INVALID_DOCUMENT", (e as Error).message); }
   const name = String(body?.name ?? "Mein Dashboard").trim().slice(0, 160) || "Mein Dashboard"; const id = publicId();
   const { data: display, error } = await context.database.from("displays").insert({ public_id: id, owner_id: context.user.id, name }).select("id").single();
   if (error || !display) return apiError("CREATE_FAILED", "Dashboard konnte nicht erstellt werden", 500);
-  const draft = await context.database.from("display_drafts").insert({ display_id: display.id, envelope });
+  const draft = await context.database.from("display_drafts").insert({ display_id: display.id, document });
   if (draft.error) { await context.database.from("displays").delete().eq("id", display.id); return apiError("CREATE_FAILED", "Entwurf konnte nicht erstellt werden", 500); }
   return NextResponse.json({ id, displayUrl: publicUrl(request, `/d/${id}`) }, { status: 201 });
 }

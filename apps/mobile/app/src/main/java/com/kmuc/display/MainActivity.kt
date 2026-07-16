@@ -1,12 +1,16 @@
 package com.kmuc.display
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.graphics.Color as AndroidColor
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -70,19 +74,39 @@ import java.text.NumberFormat
 import java.util.Date
 
 class MainActivity : ComponentActivity() {
+    private lateinit var controller: DashboardController
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        controller = DashboardController(applicationContext)
+        handleConnectionIntent(intent)
         enterFullscreen()
         setContent {
             DisplayTheme {
-                val controller = remember { DashboardController(applicationContext) }
                 val scope = rememberCoroutineScope()
                 DisposableEffect(Unit) { controller.start(scope); onDispose { } }
                 Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF090B12)) {
-                    if (controller.configured) DashboardScreen(controller) else SetupScreen { url, code, secret, configPoll, dataPoll -> controller.configure(url, code, secret, configPoll, dataPoll, scope) }
+                    if (controller.configured) DashboardScreen(controller) else SetupScreen(
+                        status = controller.status,
+                        onBrowserConnect = { url ->
+                            try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(controller.browserConnectUrl(url)))); null }
+                            catch (error: ActivityNotFoundException) { "Kein Browser verfügbar. Nutze den Kopplungscode." }
+                            catch (error: Exception) { error.message ?: "Browser konnte nicht geöffnet werden." }
+                        },
+                        onCodeConnect = { url, code -> controller.connectWithCode(url, code, null, null, scope) },
+                    )
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handleConnectionIntent(intent) }
+
+    private fun handleConnectionIntent(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme != "display" || uri.host != "paired") return
+        controller.acceptBrowserConnection(uri.getQueryParameter("state").orEmpty(), uri.getQueryParameter("url").orEmpty(), uri.getQueryParameter("token").orEmpty(), lifecycleScope)
+        intent.data = null
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -100,12 +124,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun SetupScreen(onConnect: (String, String, String, Int?, Int?) -> Unit) {
+private fun SetupScreen(status: String, onBrowserConnect: (String) -> String?, onCodeConnect: (String, String) -> Unit) {
     var url by remember { mutableStateOf(BuildConfig.API_URL + "/d/") }
-    var secret by remember { mutableStateOf("") }
     var pairingCode by remember { mutableStateOf("") }
-    var configPoll by remember { mutableStateOf("") }
-    var dataPoll by remember { mutableStateOf("") }
+    var showFallback by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     BoxWithConstraints(
         Modifier
@@ -134,19 +156,17 @@ private fun SetupScreen(onConnect: (String, String, String, Int?, Int?) -> Unit)
                 Spacer(Modifier.width(13.dp)); Column { Text("display", fontSize = 24.sp, fontWeight = FontWeight.Bold); Text("DASHBOARD CLIENT", color = Color(0xFF8B91A7), fontSize = 10.sp, letterSpacing = 1.5.sp) }
             }
             Text("Dashboard verbinden", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-            Text("Trage die veröffentlichte URL und deine PIN/Passphrase einmalig ein. Die Daten werden nur auf diesem Gerät entschlüsselt.", color = Color(0xFFA7ABBA), fontSize = 13.sp)
+            Text("Trage nur die veröffentlichte Dashboard-URL ein. Die Freigabe erfolgt anschließend über deinen Browser-Login.", color = Color(0xFFA7ABBA), fontSize = 13.sp)
             OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth(), label = { Text("Dashboard-URL") }, singleLine = true)
-            OutlinedTextField(pairingCode, { pairingCode = it.filter(Char::isDigit).take(6) }, Modifier.fillMaxWidth(), label = { Text("6-stelliger Pairing-Code") }, singleLine = true)
-            OutlinedTextField(secret, { secret = it }, Modifier.fillMaxWidth(), label = { Text("PIN/Passphrase") }, singleLine = true)
-            if (compact) {
-                OutlinedTextField(configPoll, { configPoll = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Konfig.-Polling (optional)") }, singleLine = true)
-                OutlinedTextField(dataPoll, { dataPoll = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Daten-Polling (optional)") }, singleLine = true)
-            } else Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(configPoll, { configPoll = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("Konfig.-Polling (optional)") }, singleLine = true)
-                OutlinedTextField(dataPoll, { dataPoll = it.filter(Char::isDigit) }, Modifier.weight(1f), label = { Text("Daten-Polling (optional)") }, singleLine = true)
-            }
             error?.let { Text(it, color = Color(0xFFFF8799), fontSize = 12.sp) }
-            Button(onClick = { try { require(pairingCode.length == 6) { "Bitte den 6-stelligen Pairing-Code eingeben." }; onConnect(url, pairingCode, secret, configPoll.toIntOrNull(), dataPoll.toIntOrNull()); error = null } catch (exception: Exception) { error = exception.message } }, modifier = Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C5CFF))) { Text("Sicher verbinden") }
+            if (status != "Nicht verbunden") Text(status, color = Color(0xFFA7ABBA), fontSize = 12.sp)
+            Button(onClick = { error = onBrowserConnect(url); showFallback = true }, modifier = Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C5CFF))) { Text("Im Browser anmelden") }
+            if (!showFallback) TextButton(onClick = { showFallback = true }, modifier = Modifier.fillMaxWidth()) { Text("Browser funktioniert nicht? Kopplungscode nutzen") }
+            if (showFallback) {
+                Text("Falls der Browser oder die Rückkehr zur App nicht funktioniert, erzeuge im Studio einen Fallback-Code.", color = Color(0xFFA7ABBA), fontSize = 12.sp)
+                OutlinedTextField(pairingCode, { pairingCode = it.filter(Char::isDigit).take(6) }, Modifier.fillMaxWidth(), label = { Text("6-stelliger Kopplungscode") }, singleLine = true)
+                Button(onClick = { try { require(pairingCode.length == 6) { "Bitte den 6-stelligen Kopplungscode eingeben." }; onCodeConnect(url, pairingCode); error = null } catch (exception: Exception) { error = exception.message } }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Mit Code verbinden") }
+            }
         }
     }
 }
