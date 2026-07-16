@@ -1,0 +1,25 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: display
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-display}
+      MYSQL_USER: ${MYSQL_USER:-display}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-display}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-display}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - display_mysql:/var/lib/mysql
+      - ./packages/database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-udisplay", "-p${MYSQL_PASSWORD:-display}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  display_mysql:
+    name: display
+

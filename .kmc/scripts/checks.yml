@@ -1,0 +1,10 @@
+name: display checks
+description: Prüft und baut die npm-Workspaces
+defaults:
+  shell: bash
+  cwd: .
+steps:
+  - name: TypeScript checks
+    run: npm run check
+  - name: Production builds
+    run: npm run build

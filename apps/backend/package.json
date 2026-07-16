@@ -1,0 +1,26 @@
+{
+  "name": "@display/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cors": "2.8.6",
+    "dotenv": "17.4.2",
+    "express": "5.2.1",
+    "mysql2": "3.23.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "26.1.1",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3"
+  }
+}
