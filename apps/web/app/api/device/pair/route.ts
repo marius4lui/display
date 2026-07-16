@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError, jsonBody, randomToken, sha256 } from "../../../../lib/server/http";
+import { publicUrl } from "../../../../lib/server/public-url";
 import { adminClient } from "../../../../lib/server/supabase";
 
 export async function POST(request: Request) {
@@ -14,5 +15,5 @@ export async function POST(request: Request) {
   if (!consumed.data) return apiError("INVALID_PAIRING", "Pairing-Code wurde bereits verwendet", 409);
   const token = randomToken(); const { data: device, error } = await admin.from("display_devices").insert({ display_id: display.id, name, token_hash: sha256(token) }).select("id").single();
   if (error || !device) return apiError("PAIRING_FAILED", "Gerät konnte nicht gekoppelt werden", 500);
-  return NextResponse.json({ deviceId: device.id, deviceToken: token, displayUrl: `${new URL(request.url).origin}/d/${displayId}` }, { status: 201 });
+  return NextResponse.json({ deviceId: device.id, deviceToken: token, displayUrl: publicUrl(request, `/d/${displayId}`) }, { status: 201 });
 }

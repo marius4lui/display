@@ -49,10 +49,11 @@ Die Web-Anwendung benötigt ausschließlich:
 SUPABASE_URL=https://supabase.example.org
 SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
+PUBLIC_APP_URL=https://display.example.org
 WEB_PORT=3000
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY` ist ausschließlich serverseitig erlaubt. TLS ist vor Next.js und Supabase Pflicht. `docker compose up -d --build` startet nur die Web-Anwendung und verbindet sie mit der bereits laufenden Supabase-Installation.
+`SUPABASE_SERVICE_ROLE_KEY` ist ausschließlich serverseitig erlaubt. `PUBLIC_APP_URL` ist die von Geräten und Browsern erreichbare öffentliche Basis-URL der Web-Anwendung; sie verhindert interne Hostnamen in erzeugten Display- und Asset-URLs. TLS ist vor Next.js und Supabase Pflicht. `docker compose up -d --build` startet nur die Web-Anwendung und verbindet sie mit der bereits laufenden Supabase-Installation.
 
 ## API-Kern
 

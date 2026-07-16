@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseEnvelope } from "../../../lib/server/envelope";
 import { apiError, jsonBody, publicId } from "../../../lib/server/http";
+import { publicUrl } from "../../../lib/server/public-url";
 import { userContext } from "../../../lib/server/supabase";
 
 export async function GET(request: NextRequest) {
@@ -18,5 +19,5 @@ export async function POST(request: NextRequest) {
   if (error || !display) return apiError("CREATE_FAILED", "Dashboard konnte nicht erstellt werden", 500);
   const draft = await context.database.from("display_drafts").insert({ display_id: display.id, envelope });
   if (draft.error) { await context.database.from("displays").delete().eq("id", display.id); return apiError("CREATE_FAILED", "Entwurf konnte nicht erstellt werden", 500); }
-  return NextResponse.json({ id, displayUrl: `${new URL(request.url).origin}/d/${id}` }, { status: 201 });
+  return NextResponse.json({ id, displayUrl: publicUrl(request, `/d/${id}`) }, { status: 201 });
 }
