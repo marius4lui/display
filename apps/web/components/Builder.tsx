@@ -15,6 +15,8 @@ function Clock() {
 
 type JsonLeaf = { path: string; value: unknown };
 type ResizeDirection = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+type Placement = { x: number; y: number; width: number; height: number };
+type DragPayload = Placement & ({ kind: "existing"; id: string } | { kind: "new"; widgetType: WidgetType });
 
 function jsonLeaves(value: unknown, path = "", result: JsonLeaf[] = []): JsonLeaf[] {
   if (value !== null && typeof value === "object") {
@@ -53,6 +55,8 @@ export default function Builder() {
   const [customTemplates, setCustomTemplates] = useState<{ name: string; document: DashboardDocument }[]>([]);
   const selected = document.widgets.find((item) => item.id === selectedId);
   const [dragging, setDragging] = useState(false);
+  const [dragPayload, setDragPayload] = useState<DragPayload | null>(null);
+  const [placement, setPlacement] = useState<Placement | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("display-project");
@@ -136,8 +140,10 @@ export default function Builder() {
   const dropOnCanvas = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
-    const x = Math.max(0, Math.min(document.settings.columns - 1, Math.floor((event.clientX - rect.left) / rect.width * document.settings.columns)));
-    const y = Math.max(0, Math.min(document.settings.rows - 1, Math.floor((event.clientY - rect.top) / rect.height * document.settings.rows)));
+    const fallbackX = Math.floor((event.clientX - rect.left) / rect.width * document.settings.columns);
+    const fallbackY = Math.floor((event.clientY - rect.top) / rect.height * document.settings.rows);
+    const x = placement?.x ?? Math.max(0, Math.min(document.settings.columns - 1, fallbackX));
+    const y = placement?.y ?? Math.max(0, Math.min(document.settings.rows - 1, fallbackY));
     const widgetId = event.dataTransfer.getData("application/x-display-widget");
     const widgetType = event.dataTransfer.getData("application/x-display-widget-type") as WidgetType;
     if (widgetId) {
@@ -151,6 +157,27 @@ export default function Builder() {
       setSelectedId(item.id);
     }
     setDragging(false);
+    setDragPayload(null);
+    setPlacement(null);
+  };
+  const dragOverCanvas = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (!dragPayload) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const rawX = Math.floor((event.clientX - rect.left) / rect.width * document.settings.columns);
+    const rawY = Math.floor((event.clientY - rect.top) / rect.height * document.settings.rows);
+    setPlacement({
+      x: Math.max(0, Math.min(document.settings.columns - dragPayload.width, rawX)),
+      y: Math.max(0, Math.min(document.settings.rows - dragPayload.height, rawY)),
+      width: dragPayload.width,
+      height: dragPayload.height,
+    });
+  };
+  const finishDrag = () => {
+    setDragging(false);
+    setDragPayload(null);
+    setPlacement(null);
   };
   const startResize = (event: ReactPointerEvent<HTMLButtonElement>, widget: Widget, direction: ResizeDirection) => {
     event.preventDefault();
@@ -209,7 +236,7 @@ export default function Builder() {
         </nav>
         {tab === "widgets" && <div className="panel-content">
           <p className="eyebrow">Bausteine</p><div className="widget-library">
-            {(["text", "clock", "image", "value", "weather"] as WidgetType[]).map((type) => <button draggable onDragStart={(event) => { event.dataTransfer.setData("application/x-display-widget-type", type); setDragging(true); }} onDragEnd={() => setDragging(false)} key={type} onClick={() => { const item = createWidget(type, document.widgets.length); patchDocument({ widgets: [...document.widgets, item] }); setSelectedId(item.id); }}><span>{type === "text" ? "Tt" : type === "clock" ? "◷" : type === "image" ? "▧" : type === "value" ? "#" : "☀"}</span>{({ text: "Text", clock: "Uhr", image: "Bild", value: "API-Wert", weather: "Wetter" } as const)[type]}</button>)}
+            {(["text", "clock", "image", "value", "weather"] as WidgetType[]).map((type) => <button draggable onDragStart={(event) => { const size = { width: type === "text" ? 6 : 4, height: 2 }; event.dataTransfer.setData("application/x-display-widget-type", type); setDragPayload({ kind: "new", widgetType: type, x: 0, y: 0, ...size }); setDragging(true); }} onDragEnd={finishDrag} key={type} onClick={() => { const item = createWidget(type, document.widgets.length); patchDocument({ widgets: [...document.widgets, item] }); setSelectedId(item.id); }}><span>{type === "text" ? "Tt" : type === "clock" ? "◷" : type === "image" ? "▧" : type === "value" ? "#" : "☀"}</span>{({ text: "Text", clock: "Uhr", image: "Bild", value: "API-Wert", weather: "Wetter" } as const)[type]}</button>)}
           </div>
           <p className="eyebrow">Ebenen</p><div className="layers">{document.widgets.map((item) => <button className={item.id === selectedId ? "active" : ""} key={item.id} onClick={() => setSelectedId(item.id)}><span>{item.title}</span><small>{item.width}×{item.height}</small></button>)}</div>
         </div>}
@@ -247,7 +274,7 @@ export default function Builder() {
 
       <section className="canvas-area">
         <div className="canvas-toolbar"><span><i /> Live Preview</span><span>1920 × 1080 · Landscape</span></div>
-        <div className={`display-frame${dragging ? " is-dragging" : ""}`}><div className="display-grid" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDrop={dropOnCanvas} style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>{document.widgets.map((item) => <PreviewWidget key={item.id} widget={item} data={previewData} selected={item.id === selectedId} onSelect={() => setSelectedId(item.id)} onDragStart={(event) => { event.dataTransfer.setData("application/x-display-widget", item.id); event.dataTransfer.effectAllowed = "move"; setDragging(true); }} onDragEnd={() => setDragging(false)} onResizeStart={(event, direction) => startResize(event, item, direction)} />)}</div></div>
+        <div className={`display-frame${dragging ? " is-dragging" : ""}`}><div className="display-grid" onDragOver={dragOverCanvas} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPlacement(null); }} onDrop={dropOnCanvas} style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>{document.widgets.map((item) => <PreviewWidget key={item.id} widget={item} data={previewData} selected={item.id === selectedId} onSelect={() => setSelectedId(item.id)} onDragStart={(event) => { event.dataTransfer.setData("application/x-display-widget", item.id); event.dataTransfer.effectAllowed = "move"; setDragPayload({ kind: "existing", id: item.id, x: item.x, y: item.y, width: item.width, height: item.height }); setDragging(true); }} onDragEnd={finishDrag} onResizeStart={(event, direction) => startResize(event, item, direction)} />)}{placement && <div className="placement-preview" style={{ gridColumn: `${placement.x + 1} / span ${placement.width}`, gridRow: `${placement.y + 1} / span ${placement.height}` }}><span>{placement.width} × {placement.height}</span></div>}</div></div>
         {notice && <div className={`notice ${notice.kind}`}>{notice.text}</div>}
         {displayUrl && <div className="share-bar"><span>Client-URL</span><code>{displayUrl}</code><button onClick={() => navigator.clipboard.writeText(displayUrl)}>Kopieren</button></div>}
       </section>
@@ -257,7 +284,8 @@ export default function Builder() {
         {(selected.type === "text") && <label>Inhalt<textarea value={selected.staticValue ?? ""} onChange={(e) => patchWidget({ staticValue: e.target.value })} /></label>}
         {selected.type === "image" && <label>Bild-URL<input value={selected.imageUrl ?? ""} onChange={(e) => patchWidget({ imageUrl: e.target.value })} /></label>}
         {(selected.type === "value" || selected.type === "weather") && <><label>Datenquelle<select value={selected.dataSourceId ?? ""} onChange={(e) => patchWidget({ dataSourceId: e.target.value })}><option value="">Auswählen …</option>{document.dataSources.map((source) => <option value={source.id} key={source.id}>{source.name}</option>)}</select></label><label>JSON-Pfad<input value={selected.jsonPath ?? ""} onChange={(e) => patchWidget({ jsonPath: e.target.value })} /></label><div className="inline"><label>Format<select value={selected.format ?? "text"} onChange={(e) => patchWidget({ format: e.target.value as Widget["format"] })}><option value="text">Text</option><option value="number">Zahl</option><option value="date">Datum</option><option value="temperature">Temperatur</option></select></label><label>Suffix<input value={selected.suffix ?? ""} onChange={(e) => patchWidget({ suffix: e.target.value })} /></label></div></>}
-        <p className="eyebrow">Position & Größe</p><div className="quad">{(["x","y","width","height"] as const).map((key) => <label key={key}>{key}<input type="number" min={key === "width" || key === "height" ? 1 : 0} max={key === "x" || key === "width" ? 12 : 8} value={selected[key]} onChange={(e) => patchWidget({ [key]: Number(e.target.value) })} /></label>)}</div>
+        <p className="canvas-hint">Im Canvas ziehen · An Kanten oder Ecken skalieren</p>
+        <details className="pro-settings"><summary>Profi: Position & Größe</summary><div className="quad">{(["x","y","width","height"] as const).map((key) => <label key={key}>{key}<input type="number" min={key === "width" || key === "height" ? 1 : 0} max={key === "x" || key === "width" ? 12 : 8} value={selected[key]} onChange={(e) => patchWidget({ [key]: Number(e.target.value) })} /></label>)}</div></details>
         <p className="eyebrow">Darstellung</p><div className="inline colors"><label>Fläche<input type="color" value={selected.style.background} onChange={(e) => patchStyle({ background: e.target.value })} /></label><label>Text<input type="color" value={selected.style.foreground} onChange={(e) => patchStyle({ foreground: e.target.value })} /></label></div>
         <label>Animation<select value={selected.animation} onChange={(e) => patchWidget({ animation: e.target.value as Widget["animation"] })}><option value="none">Keine</option><option value="pulse">Pulse</option><option value="float">Float</option><option value="glow">Glow</option></select></label>
         <label>Bei Fehler<select value={selected.errorBehavior} onChange={(e) => patchWidget({ errorBehavior: e.target.value as Widget["errorBehavior"] })}><option value="stale">Letzten Wert</option><option value="empty">Leer</option><option value="error">Fehler anzeigen</option></select></label>
