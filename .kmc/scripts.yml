@@ -3,3 +3,6 @@ scripts:
   checks:
     file: ./scripts/checks.yml
     description: TypeScript prüfen und Web/Backend bauen
+  hotrestart:
+    file: ./scripts/hotrestart.yml
+    description: Docker-Stack neu bauen, Container ersetzen und Status prüfen

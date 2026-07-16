@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { addDefaultWeatherWidgets, blankDashboard, createWidget, formatValue, type DashboardDocument, type DataSource, type Widget, type WidgetType, valueAtPath, weatherTemplate } from "../lib/dashboard";
 import { decryptDocument, encryptDocument, type EncryptedEnvelope } from "../lib/crypto";
 
@@ -14,6 +14,7 @@ function Clock() {
 }
 
 type JsonLeaf = { path: string; value: unknown };
+type ResizeDirection = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 
 function jsonLeaves(value: unknown, path = "", result: JsonLeaf[] = []): JsonLeaf[] {
   if (value !== null && typeof value === "object") {
@@ -24,7 +25,7 @@ function jsonLeaves(value: unknown, path = "", result: JsonLeaf[] = []): JsonLea
   return result;
 }
 
-function PreviewWidget({ widget, data, selected, onSelect, onDragStart, onDragEnd }: { widget: Widget; data: Record<string, unknown>; selected: boolean; onSelect: () => void; onDragStart: (event: DragEvent<HTMLElement>) => void; onDragEnd: () => void }) {
+function PreviewWidget({ widget, data, selected, onSelect, onDragStart, onDragEnd, onResizeStart }: { widget: Widget; data: Record<string, unknown>; selected: boolean; onSelect: () => void; onDragStart: (event: DragEvent<HTMLElement>) => void; onDragEnd: () => void; onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>, direction: ResizeDirection) => void }) {
   let content: React.ReactNode = widget.staticValue ?? widget.title;
   if (widget.type === "clock") content = <Clock />;
   if (widget.type === "image") content = widget.imageUrl ? <img src={widget.imageUrl} alt={widget.title} /> : "Bild-URL fehlt";
@@ -33,6 +34,7 @@ function PreviewWidget({ widget, data, selected, onSelect, onDragStart, onDragEn
     <article draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onSelect} className={`preview-widget animation-${widget.animation ?? "none"}${selected ? " selected-outline" : ""}`} style={{ gridColumn: `${widget.x + 1} / span ${widget.width}`, gridRow: `${widget.y + 1} / span ${widget.height}`, background: widget.style.background, color: widget.style.foreground, textAlign: widget.style.align }}>
       <small>{widget.title}</small>
       <div className="widget-value">{widget.type === "weather" && <span className="weather-icon">☀</span>}{content}</div>
+      {selected && (["n", "ne", "e", "se", "s", "sw", "w", "nw"] as ResizeDirection[]).map((direction) => <button draggable={false} aria-label={`Größe ${direction}`} className={`resize-handle resize-${direction}`} key={direction} onDragStart={(event) => event.preventDefault()} onPointerDown={(event) => onResizeStart(event, direction)} />)}
     </article>
   );
 }
@@ -150,6 +152,42 @@ export default function Builder() {
     }
     setDragging(false);
   };
+  const startResize = (event: ReactPointerEvent<HTMLButtonElement>, widget: Widget, direction: ResizeDirection) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const grid = event.currentTarget.closest(".display-grid");
+    if (!(grid instanceof HTMLElement)) return;
+    const rect = grid.getBoundingClientRect();
+    const origin = { x: event.clientX, y: event.clientY, widget: { ...widget } };
+    const horizontal = direction.includes("e") || direction.includes("w");
+    const vertical = direction.includes("n") || direction.includes("s");
+    setDragging(true);
+    const move = (pointer: PointerEvent) => {
+      const dx = horizontal ? Math.round((pointer.clientX - origin.x) / (rect.width / document.settings.columns)) : 0;
+      const dy = vertical ? Math.round((pointer.clientY - origin.y) / (rect.height / document.settings.rows)) : 0;
+      const next = { x: origin.widget.x, y: origin.widget.y, width: origin.widget.width, height: origin.widget.height };
+      if (direction.includes("e")) next.width = Math.max(1, Math.min(document.settings.columns - next.x, origin.widget.width + dx));
+      if (direction.includes("s")) next.height = Math.max(1, Math.min(document.settings.rows - next.y, origin.widget.height + dy));
+      if (direction.includes("w")) {
+        next.x = Math.max(0, Math.min(origin.widget.x + origin.widget.width - 1, origin.widget.x + dx));
+        next.width = origin.widget.width + origin.widget.x - next.x;
+      }
+      if (direction.includes("n")) {
+        next.y = Math.max(0, Math.min(origin.widget.y + origin.widget.height - 1, origin.widget.y + dy));
+        next.height = origin.widget.height + origin.widget.y - next.y;
+      }
+      setDocument((current) => ({ ...current, widgets: current.widgets.map((item) => item.id === widget.id ? { ...item, ...next } : item) }));
+    };
+    const end = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      setDragging(false);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  };
 
   return <main className="builder-shell">
     <header className="topbar">
@@ -209,7 +247,7 @@ export default function Builder() {
 
       <section className="canvas-area">
         <div className="canvas-toolbar"><span><i /> Live Preview</span><span>1920 × 1080 · Landscape</span></div>
-        <div className={`display-frame${dragging ? " is-dragging" : ""}`}><div className="display-grid" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDrop={dropOnCanvas} style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>{document.widgets.map((item) => <PreviewWidget key={item.id} widget={item} data={previewData} selected={item.id === selectedId} onSelect={() => setSelectedId(item.id)} onDragStart={(event) => { event.dataTransfer.setData("application/x-display-widget", item.id); event.dataTransfer.effectAllowed = "move"; setDragging(true); }} onDragEnd={() => setDragging(false)} />)}</div></div>
+        <div className={`display-frame${dragging ? " is-dragging" : ""}`}><div className="display-grid" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDrop={dropOnCanvas} style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>{document.widgets.map((item) => <PreviewWidget key={item.id} widget={item} data={previewData} selected={item.id === selectedId} onSelect={() => setSelectedId(item.id)} onDragStart={(event) => { event.dataTransfer.setData("application/x-display-widget", item.id); event.dataTransfer.effectAllowed = "move"; setDragging(true); }} onDragEnd={() => setDragging(false)} onResizeStart={(event, direction) => startResize(event, item, direction)} />)}</div></div>
         {notice && <div className={`notice ${notice.kind}`}>{notice.text}</div>}
         {displayUrl && <div className="share-bar"><span>Client-URL</span><code>{displayUrl}</code><button onClick={() => navigator.clipboard.writeText(displayUrl)}>Kopieren</button></div>}
       </section>
