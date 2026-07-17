@@ -201,15 +201,17 @@ export default function Builder() {
       const response = await fetch(`/api/dashboards/${dashboardId}/pairings`, { method: "POST" });
       const result = await response.json() as { code?: string; qrToken?: string; expiresAt?: string; displayUrl?: string; error?: { message?: string } };
       if (!response.ok || !result.code || !result.qrToken || !result.expiresAt || !result.displayUrl) throw new Error(result.error?.message ?? "Pairing fehlgeschlagen");
-      const deepLink = new URL("display://pair");
-      deepLink.searchParams.set("url", result.displayUrl);
-      deepLink.searchParams.set("token", result.qrToken);
-      const dataUrl = await QRCode.toDataURL(deepLink.toString(), {
+      // QR scanners trust normal HTTPS links. The public handoff page then opens
+      // the installed app with the same short-lived pairing secret.
+      const pairingPage = new URL("/pair", result.displayUrl);
+      pairingPage.searchParams.set("url", result.displayUrl);
+      pairingPage.searchParams.set("token", result.qrToken);
+      const dataUrl = await QRCode.toDataURL(pairingPage.toString(), {
         width: 360, margin: 2, errorCorrectionLevel: "M",
         color: { dark: "#090b12", light: "#ffffff" },
       });
       setPairingCode(result.code);
-      setPairingQr({ dataUrl, deepLink: deepLink.toString(), expiresAt: result.expiresAt });
+      setPairingQr({ dataUrl, launchUrl: pairingPage.toString(), expiresAt: result.expiresAt });
       setNotice({ kind: "ok", text: "QR-Code erstellt. Er ist einmalig und 10 Minuten gültig." });
     } catch (error) {
       setPairingQr(null);
