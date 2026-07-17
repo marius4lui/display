@@ -3,6 +3,7 @@ import { apiError, jsonBody } from "../../../../lib/server/http";
 import { userContext } from "../../../../lib/server/supabase";
 import type { ApiDiagnostic, DiagnosticMessage } from "../../../../lib/api-diagnostics";
 import type { DataSource } from "../../../../lib/dashboard";
+import { executeDataSource } from "../../../../lib/server/data-source";
 
 export const runtime = "nodejs";
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -29,40 +30,21 @@ function completeHeaders(source: DataSource) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!await userContext(request)) return apiError("UNAUTHENTICATED", "Anmeldung erforderlich", 401);
+  const context = await userContext(request); if (!context) return apiError("UNAUTHENTICATED", "Anmeldung erforderlich", 401);
   const body = await jsonBody(request);
   const source = body?.source as DataSource | undefined;
   if (!source || !source.url || !source.method) return apiError("INVALID_SOURCE", "Datenquelle ist unvollständig");
-  let url: URL;
-  try { url = new URL(source.url); } catch { return apiError("INVALID_URL", "Die API-URL ist ungültig"); }
-  if (!(["http:", "https:"].includes(url.protocol))) return apiError("INVALID_PROTOCOL", "Nur HTTP- und HTTPS-URLs sind erlaubt");
-
-  const headers = completeHeaders(source);
-  const requestBody = source.method === "GET" ? null : source.body ?? "";
   const startedAt = new Date().toISOString();
-  const started = performance.now();
-  const requestInfo = { method: source.method, url: url.toString(), headers, body: requestBody };
-  try {
-    const response = await fetch(url, { method: source.method, headers, body: requestBody ?? undefined, redirect: "follow", signal: AbortSignal.timeout(TIMEOUT_MS), cache: "no-store" });
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const shown = bytes.slice(0, MAX_BODY_BYTES);
-    const text = new TextDecoder().decode(shown);
-    const diagnostic: ApiDiagnostic = {
-      ok: response.ok,
-      startedAt,
-      durationMs: Math.round(performance.now() - started),
-      request: requestInfo,
-      response: {
-        status: response.status, statusText: response.statusText, url: response.url,
-        redirected: response.redirected, headers: Object.fromEntries(response.headers.entries()),
-        body: text, bodyTruncated: bytes.length > MAX_BODY_BYTES,
-        contentType: response.headers.get("content-type") ?? "", sizeBytes: bytes.length,
-      },
-      ...(!response.ok ? { error: { code: `HTTP_${response.status}`, title: `HTTP ${response.status} ${response.statusText}`, detail: "Die API wurde erreicht, hat die Anfrage aber abgelehnt oder konnte sie nicht verarbeiten.", hint: response.status === 401 || response.status === 403 ? "Authentifizierung, Token-Berechtigungen und Header prüfen." : response.status === 404 ? "Pfad, API-Version und Ressource prüfen." : response.status === 429 ? "Rate-Limit erreicht. Intervall erhöhen oder Limit beim Anbieter prüfen." : response.status >= 500 ? "Fehler auf dem Zielserver. Response-Body und Server-Logs prüfen." : "Request-Parameter, Header und Body mit der API-Dokumentation abgleichen." } } : {}),
-    };
-    return NextResponse.json({ diagnostic });
-  } catch (error) {
-    const diagnostic: ApiDiagnostic = { ok: false, startedAt, durationMs: Math.round(performance.now() - started), request: requestInfo, error: classify(error) };
-    return NextResponse.json({ diagnostic });
+  let resolved;
+  try { resolved = await executeDataSource(source, context.user.id, context.database); }
+  catch (error) {
+    const startedAt = new Date().toISOString();
+    return NextResponse.json({ diagnostic: { ok: false, startedAt, durationMs: 0, request: { method: source.method, url: source.url, headers: completeHeaders(source), body: source.body ?? null }, error: classify(error) } satisfies ApiDiagnostic });
   }
+  const diagnostic: ApiDiagnostic = {
+    ok: true, startedAt, durationMs: resolved.durationMs,
+    request: { method: source.method, url: resolved.url, headers: resolved.headers, body: resolved.body ?? null },
+    response: { status: resolved.status, statusText: resolved.statusText, url: resolved.url, redirected: false, headers: resolved.responseHeaders, body: resolved.responseText, bodyTruncated: false, contentType: resolved.contentType, sizeBytes: new TextEncoder().encode(resolved.responseText).byteLength },
+  };
+  return NextResponse.json({ diagnostic });
 }

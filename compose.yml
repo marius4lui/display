@@ -1,5 +1,6 @@
 services:
   web:
+    image: display-web:local
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -10,8 +11,18 @@ services:
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3000}
+      SECRET_STORE_MASTER_KEY: ${SECRET_STORE_MASTER_KEY}
+      COLLECTOR_TOKEN: ${COLLECTOR_TOKEN}
     ports:
       - "${WEB_PORT:-3000}:3000"
+  collector:
+    image: display-web:local
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      COLLECTOR_TOKEN: ${COLLECTOR_TOKEN}
+    command: ["sh", "-c", "while true; do wget -qO- --header=\"Authorization: Bearer $${COLLECTOR_TOKEN}\" --post-data='' http://web:3000/api/internal/collector || true; sleep 10; done"]
 
 # Supabase itself is operated with the official self-hosted Supabase stack.
 # For local development use `npm run supabase:start`.

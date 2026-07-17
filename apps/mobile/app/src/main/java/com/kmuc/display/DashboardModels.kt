@@ -35,6 +35,15 @@ data class DashboardWidget(
     val jsonPath: String?,
     val format: String?,
     val suffix: String?,
+    val min: Double?,
+    val max: Double?,
+    val listTitlePath: String?,
+    val listSubtitlePath: String?,
+    val maxItems: Int,
+    val chartType: String?,
+    val historyDays: Int,
+    val statusMap: JSONObject?,
+    val conditionalRules: JSONArray?,
     val animation: String,
     val errorBehavior: String,
     val style: WidgetStyle,
@@ -90,7 +99,7 @@ fun parsePublishedDashboard(json: String): PublishedDashboard {
 fun parseDashboardDocument(json: String): DashboardDocument {
     val root = JSONObject(json)
     val schemaVersion = root.getInt("schemaVersion")
-    require(schemaVersion == 1 || schemaVersion == 2) { "Dashboard-Schema wird nicht unterstützt" }
+    require(schemaVersion in 1..3) { "Dashboard-Schema wird nicht unterstützt" }
     val settingsJson = root.getJSONObject("settings")
     val settings = DashboardSettings(
         configPollSeconds = settingsJson.optInt("configPollSeconds", 30).coerceAtLeast(10),
@@ -111,6 +120,10 @@ fun parseDashboardDocument(json: String): DashboardDocument {
                 staticValue = item.optionalString("staticValue"), imageUrl = item.optionalString("imageUrl"),
                 dataSourceId = item.optionalString("dataSourceId"), jsonPath = item.optionalString("jsonPath"),
                 format = item.optionalString("format"), suffix = item.optionalString("suffix"),
+                min = if (item.has("min")) item.optDouble("min") else null, max = if (item.has("max")) item.optDouble("max") else null,
+                listTitlePath = item.optionalString("listTitlePath"), listSubtitlePath = item.optionalString("listSubtitlePath"),
+                maxItems = item.optInt("maxItems", 5), chartType = item.optionalString("chartType"), historyDays = item.optInt("historyDays", 1),
+                statusMap = item.optJSONObject("statusMap"), conditionalRules = item.optJSONArray("conditionalRules"),
                 animation = item.optString("animation", "none"), errorBehavior = item.optString("errorBehavior", "stale"),
                 style = WidgetStyle(styleJson.optString("background", "#151b2b"), styleJson.optString("foreground", "#f6f7fb"), styleJson.optString("accent", "#7c5cff"), styleJson.optString("align", "left")),
             ))
@@ -139,7 +152,7 @@ fun parseDashboardDocument(json: String): DashboardDocument {
             val headers = buildMap { headersJson.keys().forEach { key -> put(key, headersJson.getString(key)) } }
             val auth = item.optJSONObject("auth") ?: JSONObject().put("type", "none")
             add(DashboardDataSource(
-                id = item.getString("id"), name = item.optString("name"), method = item.optString("method", "GET"), url = item.getString("url"), headers = headers,
+                id = item.getString("id"), name = item.optString("name"), method = item.optString("method", "GET"), url = item.optString("url"), headers = headers,
                 body = item.optionalString("body"), auth = ApiAuth(auth.optString("type", "none"), auth.optionalString("name"), auth.optionalString("value"), auth.optionalString("username"), auth.optionalString("password")),
                 refreshSeconds = if (item.has("refreshSeconds")) item.getInt("refreshSeconds").coerceAtLeast(10) else null,
             ))

@@ -1,9 +1,3 @@
-alter table public.display_drafts add column if not exists document jsonb;
-alter table public.display_drafts alter column envelope drop not null;
-
-alter table public.display_versions add column if not exists document jsonb;
-alter table public.display_versions alter column envelope drop not null;
-
 create or replace function public.publish_display(target_display uuid)
 returns integer language plpgsql security invoker as $$
 declare next_version integer; draft jsonb; document_hash text; document_size integer;

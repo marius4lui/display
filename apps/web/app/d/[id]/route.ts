@@ -9,9 +9,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!display?.active_version) return apiError("NOT_FOUND", "Kein veröffentlichtes Dashboard", 404);
   const { data: device } = await admin.from("display_devices").select("id").eq("display_id", display.id).eq("token_hash", sha256(authorization.slice(7))).is("revoked_at", null).maybeSingle();
   if (!device) return apiError("DEVICE_UNAUTHORIZED", "Gerätefreigabe ungültig oder widerrufen", 401);
-  const { data: version } = await admin.from("display_versions").select("version, document, content_hash, published_at").eq("display_id", display.id).eq("version", display.active_version).maybeSingle();
+  const { data: version, error: versionError } = await admin.from("display_versions").select("version, document, content_hash, published_at").eq("display_id", display.id).eq("version", display.active_version).maybeSingle();
+  if (versionError) return apiError("DATABASE_ERROR", `Version konnte nicht geladen werden: ${versionError.message}`, 500);
   if (!version?.document) return apiError("LEGACY_VERSION", "Diese alte verschlüsselte Version wird nicht mehr unterstützt", 409);
   const etag = `\"${version.content_hash}\"`; if (request.headers.get("if-none-match") === etag) return new NextResponse(null, { status: 304, headers: { ETag: etag, "Cache-Control": "no-cache" } });
   await admin.from("display_devices").update({ last_seen_at: new Date().toISOString() }).eq("id", device.id);
-  return NextResponse.json({ id, version: version.version, publishedAt: version.published_at, document: version.document }, { headers: { ETag: etag, "Cache-Control": "no-cache" } });
+  const document = structuredClone(version.document) as { dataSources?: Array<Record<string, unknown>> };
+  document.dataSources = (document.dataSources ?? []).map((source) => ({ id: source.id, name: source.name, refreshSeconds: source.refreshSeconds }));
+  return NextResponse.json({ id, version: version.version, publishedAt: version.published_at, document }, { headers: { ETag: etag, "Cache-Control": "no-cache" } });
 }

@@ -1,6 +1,7 @@
 package com.kmuc.display
 
 import android.content.Context
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -20,8 +21,17 @@ import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 
-data class RuntimeValue(val value: Any?, val stale: Boolean = false, val error: String? = null)
+data class RuntimeValue(val value: Any?, val stale: Boolean = false, val error: String? = null, val history: List<Any?> = emptyList())
 private data class HttpResult(val status: Int, val body: String, val etag: String?)
+
+private fun httpFailure(connection: HttpURLConnection): IllegalStateException {
+    val body = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull().orEmpty()
+    val message = runCatching { JSONObject(body).optJSONObject("error")?.optString("message") }.getOrNull().takeUnless { it.isNullOrBlank() }
+        ?: body.take(240).takeIf { it.isNotBlank() }
+        ?: "Serverfehler"
+    Log.e("DisplayHttp", "${connection.requestMethod} ${connection.url} -> ${connection.responseCode}: $message")
+    return IllegalStateException("HTTP ${connection.responseCode} · $message")
+}
 
 class DashboardController(context: Context) {
     private val store = SecureStore(context)
@@ -32,6 +42,7 @@ class DashboardController(context: Context) {
     val values = mutableStateMapOf<String, RuntimeValue>()
     private val sourceLastRun = ConcurrentHashMap<String, Long>()
     private var job: Job? = null
+    private var lastHeartbeat = 0L
 
     fun connectWithCode(url: String, pairingCode: String, configPollOverride: Int?, dataPollOverride: Int?, scope: CoroutineScope) {
         require(url.startsWith("http://") || url.startsWith("https://")) { "Bitte eine vollständige HTTP(S)-URL eingeben." }
@@ -75,6 +86,7 @@ class DashboardController(context: Context) {
                     lastConfigurationCheck = now
                 }
                 refreshDueSources()
+                if (now - lastHeartbeat >= 60_000L) { sendHeartbeat(url); lastHeartbeat = now }
                 delay(1_000L)
             }
         }
@@ -117,17 +129,28 @@ class DashboardController(context: Context) {
 
     private suspend fun refreshDueSources() {
         val current = dashboard ?: return
+        if (current.dataSources.isEmpty()) return
         val now = System.currentTimeMillis()
-        current.dataSources.forEach { source ->
-            val interval = (store.dataPollOverride() ?: source.refreshSeconds ?: current.settings.dataPollSeconds).coerceAtLeast(10) * 1_000L
-            if (now - (sourceLastRun[source.id] ?: 0L) >= interval) {
-                sourceLastRun[source.id] = now
-                try { values[source.id] = RuntimeValue(fetchSource(source)) }
-                catch (error: Exception) {
-                    val previous = values[source.id]
-                    values[source.id] = RuntimeValue(previous?.value, stale = previous?.value != null, error = error.message ?: "API-Fehler")
-                }
-            }
+        val interval = (store.dataPollOverride() ?: current.settings.dataPollSeconds).coerceAtLeast(10) * 1_000L
+        if (now - (sourceLastRun["runtime"] ?: 0L) < interval) return
+        sourceLastRun["runtime"] = now
+        try {
+            val root = JSONObject(request(store.url().orEmpty().trimEnd('/') + "/runtime?days=7", null).body)
+            val history = mutableMapOf<String, MutableList<Any?>>()
+            val samples = root.optJSONArray("samples") ?: org.json.JSONArray()
+            for (index in 0 until samples.length()) { val sample=samples.getJSONObject(index); history.getOrPut(sample.getString("source_id")){mutableListOf()}.add(sample.opt("value")) }
+            val runtime = root.optJSONArray("runtime") ?: org.json.JSONArray()
+            for (index in 0 until runtime.length()) { val item=runtime.getJSONObject(index); val id=item.getString("source_id"); values[id]=RuntimeValue(item.opt("value"), error=item.optString("error").takeIf(String::isNotBlank), stale=!item.isNull("error"), history=history[id].orEmpty()) }
+        } catch (error: Exception) { values.keys.forEach { id -> values[id]=values[id]?.copy(stale=true,error=error.userMessage()) ?: RuntimeValue(null,error=error.userMessage()) } }
+    }
+
+    private suspend fun sendHeartbeat(url: String) = withContext(Dispatchers.IO) {
+        runCatching {
+            val connection = URL(url.trimEnd('/') + "/heartbeat").openConnection() as HttpURLConnection
+            connection.requestMethod="POST"; connection.doOutput=true; connection.connectTimeout=10_000
+            connection.setRequestProperty("Authorization", "Bearer ${store.deviceToken().orEmpty()}"); connection.setRequestProperty("Content-Type","application/json")
+            val body=JSONObject().put("appVersion",BuildConfig.VERSION_NAME).put("platformVersion",android.os.Build.VERSION.RELEASE).put("dashboardVersion",version).put("lastSyncAt",java.time.Instant.now().toString())
+            connection.outputStream.use { it.write(body.toString().toByteArray()) }; connection.responseCode
         }
     }
 
@@ -146,7 +169,7 @@ class DashboardController(context: Context) {
             connection.outputStream.use { it.write(source.body.toByteArray()) }
         }
         val code = connection.responseCode
-        if (code !in 200..299) throw IllegalStateException("HTTP $code")
+        if (code !in 200..299) throw httpFailure(connection)
         val text = connection.inputStream.bufferedReader().use { it.readText() }
         JSONTokener(text).nextValue()
     }
@@ -158,7 +181,7 @@ class DashboardController(context: Context) {
         connection.setRequestProperty("Authorization", "Bearer ${store.deviceToken().orEmpty()}")
         val code = connection.responseCode
         if (code == HttpURLConnection.HTTP_NOT_MODIFIED) return@withContext HttpResult(code, "", etag)
-        if (code !in 200..299) throw IllegalStateException("HTTP $code")
+        if (code !in 200..299) throw httpFailure(connection)
         HttpResult(code, connection.inputStream.bufferedReader().use { it.readText() }, connection.getHeaderField("ETag"))
     }
 
@@ -169,7 +192,7 @@ class DashboardController(context: Context) {
         connection.requestMethod = "POST"; connection.doOutput = true; connection.connectTimeout = 10_000; connection.readTimeout = 15_000
         connection.setRequestProperty("Content-Type", "application/json")
         connection.outputStream.use { it.write(JSONObject().put("displayId", displayId).put("code", code).put("name", android.os.Build.MODEL).toString().toByteArray()) }
-        if (connection.responseCode !in 200..299) throw IllegalStateException("HTTP ${connection.responseCode}")
+        if (connection.responseCode !in 200..299) throw httpFailure(connection)
         JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).getString("deviceToken")
     }
 }

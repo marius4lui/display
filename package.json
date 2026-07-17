@@ -13,6 +13,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check": "npm run typecheck",
     "test": "npm run test --workspaces --if-present",
+    "collector:once": "node -e \"fetch('http://localhost:3000/api/internal/collector',{method:'POST',headers:{Authorization:'Bearer '+process.env.COLLECTOR_TOKEN}}).then(async r=>{console.log(await r.text());process.exit(r.ok?0:1)})\"",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
     "supabase:reset": "supabase db reset",

@@ -17,6 +17,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -69,6 +70,7 @@ import coil3.compose.AsyncImage
 import com.kmuc.display.ui.theme.DisplayTheme
 import kotlinx.coroutines.delay
 import org.json.JSONObject
+import org.json.JSONArray
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.util.Date
@@ -125,7 +127,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun SetupScreen(status: String, onBrowserConnect: (String) -> String?, onCodeConnect: (String, String) -> Unit) {
-    var url by remember { mutableStateOf(BuildConfig.API_URL + "/d/") }
+    var url by remember { mutableStateOf("") }
     var pairingCode by remember { mutableStateOf("") }
     var showFallback by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -218,6 +220,11 @@ private fun DashboardScreen(controller: DashboardController) {
 
 @Composable
 private fun DashboardWidgetView(widget: DashboardWidget, runtime: RuntimeValue?, modifier: Modifier) {
+    val raw = valueAtJsonPath(runtime?.value, widget.jsonPath)
+    val rule = firstMatchingRule(raw, widget.conditionalRules)
+    val background = rule?.optString("background")?.takeIf(String::isNotBlank) ?: widget.style.background
+    val foreground = rule?.optString("foreground")?.takeIf(String::isNotBlank) ?: widget.style.foreground
+    val accent = rule?.optString("accent")?.takeIf(String::isNotBlank) ?: widget.style.accent
     val transition = rememberInfiniteTransition(label = "widget")
     val animated by transition.animateFloat(1f, if (widget.animation == "pulse") .58f else 1f, infiniteRepeatable(tween(1400), RepeatMode.Reverse), label = "alpha")
     val scale by transition.animateFloat(1f, if (widget.animation == "float") 1.035f else 1f, infiniteRepeatable(tween(1700), RepeatMode.Reverse), label = "scale")
@@ -225,21 +232,54 @@ private fun DashboardWidgetView(widget: DashboardWidget, runtime: RuntimeValue?,
     val content = when {
         runtime?.error != null && widget.errorBehavior == "error" -> "API-Fehler"
         runtime?.error != null && widget.errorBehavior == "empty" -> ""
-        widget.type == "value" || widget.type == "weather" -> formatRuntime(valueAtJsonPath(runtime?.value, widget.jsonPath), widget.format, widget.suffix)
-        else -> widget.staticValue.orEmpty()
+        widget.type in listOf("value","weather","metric","gauge") -> formatRuntime(raw, widget.format, widget.suffix)
+        widget.type == "status" -> widget.statusMap?.optJSONObject(raw.toString())?.let { "${it.optString("icon","●")} ${it.optString("text",raw.toString())}" } ?: raw?.toString().orEmpty()
+        else -> rule?.optString("text")?.takeIf(String::isNotBlank) ?: widget.staticValue.orEmpty()
     }
-    Box(modifier.clip(RoundedCornerShape(16.dp)).background(parseColor(widget.style.background)).alpha(animated).scale(scale).padding(18.dp)) {
+    Box(modifier.clip(RoundedCornerShape(16.dp)).background(parseColor(background)).alpha(animated).scale(scale).padding(18.dp)) {
         if (widget.type == "image" && !widget.imageUrl.isNullOrBlank()) AsyncImage(widget.imageUrl, widget.title, Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
         else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
-            Text(widget.title.uppercase(), color = parseColor(widget.style.foreground).copy(alpha=.58f), fontSize=10.sp, fontWeight=FontWeight.Bold, letterSpacing=1.sp, maxLines=1, overflow=TextOverflow.Ellipsis)
+            Text(widget.title.uppercase(), color = parseColor(foreground).copy(alpha=.58f), fontSize=10.sp, fontWeight=FontWeight.Bold, letterSpacing=1.sp, maxLines=1, overflow=TextOverflow.Ellipsis)
             when (widget.type) {
-                "clock" -> ClockText(parseColor(widget.style.foreground), textAlign)
-                "weather" -> Row(verticalAlignment=Alignment.Bottom) { Text("☀", fontSize=38.sp, color=parseColor(widget.style.accent)); Spacer(Modifier.width(12.dp)); Text(content, Modifier.weight(1f), color=parseColor(widget.style.foreground), fontSize=42.sp, fontWeight=FontWeight.Bold, textAlign=textAlign, maxLines=2) }
-                else -> Text(content, Modifier.fillMaxWidth(), color=parseColor(widget.style.foreground), fontSize=if(widget.type=="text") 27.sp else 40.sp, fontWeight=FontWeight.SemiBold, textAlign=textAlign, maxLines=4, overflow=TextOverflow.Ellipsis)
+                "clock" -> ClockText(parseColor(foreground), textAlign)
+                "weather" -> Row(verticalAlignment=Alignment.Bottom) { Text("☀", fontSize=38.sp, color=parseColor(accent)); Spacer(Modifier.width(12.dp)); Text(content, Modifier.weight(1f), color=parseColor(foreground), fontSize=42.sp, fontWeight=FontWeight.Bold, textAlign=textAlign, maxLines=2) }
+                "list" -> WidgetList(raw as? JSONArray, widget, parseColor(foreground))
+                "chart" -> WidgetChart(runtime?.history.orEmpty().map { valueAtJsonPath(it, widget.jsonPath) }, parseColor(accent))
+                "gauge" -> WidgetGauge(raw, widget, parseColor(accent), parseColor(foreground))
+                else -> Text(content, Modifier.fillMaxWidth(), color=parseColor(foreground), fontSize=if(widget.type=="text") 27.sp else 40.sp, fontWeight=FontWeight.SemiBold, textAlign=textAlign, maxLines=4, overflow=TextOverflow.Ellipsis)
             }
             if (runtime?.stale == true) Text("Zuletzt bekannter Wert", color=Color(0xFFFFB45F), fontSize=9.sp)
         }
     }
+}
+
+@Composable private fun WidgetList(rows: JSONArray?, widget: DashboardWidget, color: Color) {
+    Column(verticalArrangement=Arrangement.spacedBy(5.dp)) {
+        for(index in 0 until minOf(rows?.length() ?: 0, widget.maxItems)) {
+            val row=rows?.opt(index)
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                Text(valueAtJsonPath(row,widget.listTitlePath)?.toString().orEmpty(),color=color,fontSize=13.sp,maxLines=1)
+                Text(valueAtJsonPath(row,widget.listSubtitlePath)?.toString().orEmpty(),color=color.copy(alpha=.6f),fontSize=12.sp,maxLines=1)
+            }
+        }
+    }
+}
+@Composable private fun WidgetChart(history: List<Any?>, color: Color) {
+    val values=history.mapNotNull { (it as? Number)?.toFloat() }
+    Canvas(Modifier.fillMaxSize()) {
+        if(values.size<2)return@Canvas
+        val min=values.minOrNull()?:0f; val range=((values.maxOrNull()?:1f)-min).coerceAtLeast(.001f)
+        for(index in 1 until values.size) drawLine(color, androidx.compose.ui.geometry.Offset((index-1)*size.width/(values.size-1),size.height-(values[index-1]-min)/range*size.height), androidx.compose.ui.geometry.Offset(index*size.width/(values.size-1),size.height-(values[index]-min)/range*size.height),strokeWidth=4f)
+    }
+}
+@Composable private fun WidgetGauge(raw: Any?, widget: DashboardWidget, accent: Color, foreground: Color) {
+    val min=widget.min?:0.0;val max=widget.max?:100.0;val value=(raw as? Number)?.toDouble()?:min
+    Column { Text(formatRuntime(raw,widget.format,widget.suffix),color=foreground,fontSize=35.sp,fontWeight=FontWeight.Bold); Spacer(Modifier.height(8.dp)); Box(Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(9.dp)).background(Color.White.copy(alpha=.12f))){Box(Modifier.fillMaxWidth(((value-min)/(max-min)).toFloat().coerceIn(0f,1f)).height(12.dp).background(accent))} }
+}
+private fun firstMatchingRule(value: Any?, rules: JSONArray?): JSONObject? {
+    if(rules==null)return null
+    for(index in 0 until rules.length()){val rule=rules.optJSONObject(index)?:continue;val expected=rule.optString("value");val a=(value as? Number)?.toDouble();val b=expected.toDoubleOrNull();val match=when(rule.optString("operator")){"exists"->value!=null;"contains"->value.toString().contains(expected);"="->value.toString()==expected;"!="->value.toString()!=expected;">"->a!=null&&b!=null&&a>b;">="->a!=null&&b!=null&&a>=b;"<"->a!=null&&b!=null&&a<b;"<="->a!=null&&b!=null&&a<=b;else->false};if(match)return rule}
+    return null
 }
 
 @Composable

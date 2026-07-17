@@ -49,9 +49,11 @@ SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 PUBLIC_APP_URL=https://display.example.org
 WEB_PORT=3000
+SECRET_STORE_MASTER_KEY=...
+COLLECTOR_TOKEN=...
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY` ist ausschließlich serverseitig erlaubt. `PUBLIC_APP_URL` ist die von Geräten und Browsern erreichbare öffentliche Basis-URL der Web-Anwendung; sie verhindert interne Hostnamen in erzeugten Display- und Asset-URLs. TLS ist vor Next.js und Supabase Pflicht. `docker compose up -d --build` startet nur die Web-Anwendung und verbindet sie mit der bereits laufenden Supabase-Installation.
+`SUPABASE_SERVICE_ROLE_KEY` ist ausschließlich serverseitig erlaubt. `SECRET_STORE_MASTER_KEY` verschlüsselt API-Secrets mit AES-256-GCM und muss dauerhaft gesichert werden; `COLLECTOR_TOKEN` schützt den internen Collector-Aufruf. `PUBLIC_APP_URL` ist die von Geräten und Browsern erreichbare öffentliche Basis-URL der Web-Anwendung; sie verhindert interne Hostnamen in erzeugten Display- und Asset-URLs. TLS ist vor Next.js und Supabase Pflicht. `docker compose up -d --build` startet Web-Anwendung und Collector und verbindet sie mit der bereits laufenden Supabase-Installation.
 
 ## API-Kern
 
@@ -68,6 +70,9 @@ Account-Routen verwenden sichere HttpOnly-Session-Cookies. Geräte verwenden ein
 | `POST` | `/api/dashboards/{id}/pairings` | Einmaligen Pairing-Code erzeugen |
 | `POST` | `/api/device/pair` | Pairing-Code gegen Geräte-Token tauschen |
 | `GET` | `/d/{id}` | Aktive Version mit Geräte-Token und ETag abrufen |
+| `GET` | `/d/{id}/runtime` | Aktuelle Werte und bis zu sieben Tage Historie |
+| `POST` | `/d/{id}/heartbeat` | Geräteversion und Diagnosezustand melden |
+| `GET/POST/DELETE` | `/api/secrets` | Write-only Secret Store verwalten |
 
 ## Prüfungen
 

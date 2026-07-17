@@ -13,6 +13,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 }
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const found = await ownedDisplay(request, (await params).id); if (found.error) return found.error;
-  const { data, error } = await found.context.database.from("display_devices").select("id, name, paired_at, last_seen_at, revoked_at").eq("display_id", found.display.id).order("paired_at", { ascending: false });
-  return error ? apiError("DATABASE_ERROR", "Geräte konnten nicht geladen werden", 500) : NextResponse.json({ devices: data ?? [] });
+  const { data, error } = await found.context.database.from("display_devices").select("id, name, paired_at, last_seen_at, revoked_at, app_version, platform_version, dashboard_version, last_sync_at, last_data_at, last_error").eq("display_id", found.display.id).order("paired_at", { ascending: false });
+  const now = Date.now();
+  return error ? apiError("DATABASE_ERROR", "Geräte konnten nicht geladen werden", 500) : NextResponse.json({ devices: (data ?? []).map((device) => ({ ...device, online: !!device.last_seen_at && now - new Date(device.last_seen_at).valueOf() < 120_000 })) });
 }

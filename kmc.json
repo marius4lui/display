@@ -8,6 +8,7 @@
     { "id": "display.check", "name": "Type-check workspace", "command": "npm run check", "group": "display" },
     { "id": "display.build", "name": "Build web", "command": "npm run build", "group": "display" },
     { "id": "display.mobile", "name": "Build Android app", "command": "npm run mobile:build", "group": "display" },
-    { "id": "display.recreate", "name": "Rebuild Next.js container", "command": "docker compose up -d --build --force-recreate", "group": "display" }
+    { "id": "display.recreate", "name": "Rebuild Next.js container", "command": "docker compose up -d --build --force-recreate", "group": "display" },
+    { "id": "display.collector", "name": "Run collector once", "command": "npm run collector:once", "group": "display" }
   ]
 }

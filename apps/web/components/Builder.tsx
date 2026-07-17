@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { addDefaultWeatherWidgets, blankDashboard, createWidget, formatValue, normalizeDashboard, placementIsFree, type DashboardDocument, type DashboardPage, type DataSource, type LegacyDashboardDocument, type Widget, type WidgetType, valueAtPath, weatherTemplate } from "../lib/dashboard";
+import { blankDashboard, createWidget, effectiveWidget, formatValue, normalizeDashboard, placementIsFree, systemTemplates, type DashboardDocument, type DashboardPage, type DataSource, type LegacyDashboardDocument, type Widget, type WidgetType, valueAtPath } from "../lib/dashboard";
 import ApiWorkbench from "./ApiWorkbench";
 
 const API = "";
 type Notice = { kind: "ok" | "error"; text: string } | null;
 type DashboardSummary = { id: string; name: string; activeVersion: number | null; updatedAt: string };
+type DeviceSummary = { id:string;name:string;online:boolean;last_seen_at?:string;app_version?:string;platform_version?:string;dashboard_version?:number;last_error?:string;revoked_at?:string };
 
 function Clock() {
   const [now, setNow] = useState(new Date());
@@ -36,10 +37,16 @@ function jsonLeaves(value: unknown, path = "", result: JsonLeaf[] = []): JsonLea
 }
 
 function PreviewWidget({ widget, data, selected, interactive, onSelect, onDragStart, onDragEnd, onResizeStart }: { widget: Widget; data: Record<string, unknown>; selected: boolean; interactive: boolean; onSelect: () => void; onDragStart: (event: DragEvent<HTMLElement>) => void; onDragEnd: () => void; onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>, direction: ResizeDirection) => void }) {
+  const raw = valueAtPath(data[widget.dataSourceId ?? ""], widget.jsonPath);
+  widget = effectiveWidget(widget, raw);
   let content: React.ReactNode = widget.staticValue ?? widget.title;
   if (widget.type === "clock") content = <Clock />;
   if (widget.type === "image") content = widget.imageUrl ? <img src={widget.imageUrl} alt={widget.title} /> : "Bild-URL fehlt";
-  if (widget.type === "value" || widget.type === "weather") content = formatValue(valueAtPath(data[widget.dataSourceId ?? ""], widget.jsonPath), widget.format, widget.suffix);
+  if (["value","weather","metric"].includes(widget.type)) content = formatValue(raw, widget.format, widget.suffix);
+  if (widget.type === "status") { const state=widget.statusMap?.[String(raw)]; content=<span style={{color:state?.color??widget.style.accent}}>{state?.icon??"●"} {state?.text??String(raw??"—")}</span>; }
+  if (widget.type === "list") { const rows=Array.isArray(raw)?raw.slice(0,widget.maxItems??5):[]; content=<ul className="widget-list">{rows.map((row,index)=><li key={index}><strong>{String(valueAtPath(row,widget.listTitlePath)??"")}</strong><span>{String(valueAtPath(row,widget.listSubtitlePath)??"")}</span></li>)}</ul>; }
+  if (widget.type === "gauge") { const min=widget.min??0,max=widget.max??100,value=Number(raw),percentage=Math.max(0,Math.min(100,(value-min)/(max-min)*100)); content=<div className="widget-gauge" style={{background:`conic-gradient(${widget.style.accent} ${percentage}%,#ffffff18 0)`}}><span>{formatValue(raw,widget.format,widget.suffix)}</span></div>; }
+  if (widget.type === "chart") { const values=(Array.isArray(raw)?raw:[raw]).map(Number).filter(Number.isFinite); const max=Math.max(...values,1), points=values.map((value,index)=>`${values.length===1?50:index/(values.length-1)*100},${100-value/max*90}`).join(" "); content=<svg className="widget-chart" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={points} fill="none" stroke={widget.style.accent} strokeWidth="3" vectorEffect="non-scaling-stroke"/></svg>; }
   return (
     <article draggable={interactive} onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={interactive ? onSelect : undefined} className={`preview-widget animation-${widget.animation ?? "none"}${selected ? " selected-outline" : ""}${interactive ? "" : " preview-only"}`} style={{ gridColumn: `${widget.x + 1} / span ${widget.width}`, gridRow: `${widget.y + 1} / span ${widget.height}`, background: widget.style.background, color: widget.style.foreground, textAlign: widget.style.align }}>
       <small>{widget.title}</small>
@@ -58,6 +65,7 @@ export default function Builder() {
   const [displayUrl, setDisplayUrl] = useState("");
   const [pairingCode, setPairingCode] = useState("");
   const [dashboards, setDashboards] = useState<DashboardSummary[]>([]);
+  const [devices,setDevices]=useState<DeviceSummary[]>([]);
   const [notice, setNotice] = useState<Notice>(null);
   const [busy, setBusy] = useState(false);
   const [previewData, setPreviewData] = useState<Record<string, unknown>>({});
@@ -93,6 +101,7 @@ export default function Builder() {
       if (dashboardId && !result.dashboards.some((item) => item.id === dashboardId)) { setDashboardId(""); setDisplayUrl(""); localStorage.removeItem("display-project"); }
     });
   }, [dashboardId]);
+  useEffect(()=>{if(!dashboardId){setDevices([]);return}fetch(`/api/dashboards/${dashboardId}/pairings`).then((response)=>response.ok?response.json():{devices:[]}).then((result)=>setDevices(result.devices));},[dashboardId,pairingCode]);
 
   const patchDocument = (patch: Partial<DashboardDocument>) => setDocument((current) => ({ ...current, ...patch }));
   const patchWidgets = (update: (items: Widget[]) => Widget[]) => setDocument((current) => ({ ...current, pages: current.pages.map((page) => page.id === activePageId ? { ...page, widgets: update(page.widgets) } : page) }));
@@ -168,7 +177,7 @@ export default function Builder() {
     setDashboards((items) => items.filter((item) => item.id !== dashboardId)); selectDashboard(""); setNotice({ kind: "ok", text: "Dashboard gelöscht." });
   };
 
-  const templates = useMemo(() => [{ name: "Leer", create: blankDashboard }, { name: "Wetter", create: () => addDefaultWeatherWidgets(weatherTemplate()) }], []);
+  const templates = useMemo(() => [{ name: "Leer", category: "Basis", description: "Leeres Dashboard", create: blankDashboard }, ...systemTemplates], []);
   const mapLeaf = (source: DataSource, leaf: JsonLeaf, create = false) => {
     if (create || !selected || (selected.type !== "value" && selected.type !== "weather")) {
       const item = createWidget("value", widgets.length);
@@ -309,7 +318,7 @@ export default function Builder() {
         </nav>
         {tab === "widgets" && <div className="panel-content">
           <p className="eyebrow">Bausteine</p><div className="widget-library">
-            {(["text", "clock", "image", "value", "weather"] as WidgetType[]).map((type) => <button draggable onDragStart={(event) => { const size = { width: type === "text" ? 6 : 4, height: 2 }; event.dataTransfer.setData("application/x-display-widget-type", type); setDragPayload({ kind: "new", widgetType: type, x: 0, y: 0, grabX: 0, grabY: 0, ...size }); setDragging(true); }} onDragEnd={finishDrag} key={type} onClick={() => addWidget(type)}><span>{type === "text" ? "Tt" : type === "clock" ? "◷" : type === "image" ? "▧" : type === "value" ? "#" : "☀"}</span>{({ text: "Text", clock: "Uhr", image: "Bild", value: "API-Wert", weather: "Wetter" } as const)[type]}</button>)}
+            {(["text", "clock", "image", "value", "weather", "metric", "status", "list", "chart", "gauge"] as WidgetType[]).map((type) => <button draggable onDragStart={(event) => { const size = { width: type === "text" ? 6 : 4, height: 2 }; event.dataTransfer.setData("application/x-display-widget-type", type); setDragPayload({ kind: "new", widgetType: type, x: 0, y: 0, grabX: 0, grabY: 0, ...size }); setDragging(true); }} onDragEnd={finishDrag} key={type} onClick={() => addWidget(type)}><span>{({text:"Tt",clock:"◷",image:"▧",value:"#",weather:"☀",metric:"↗",status:"●",list:"≡",chart:"⌁",gauge:"◔"} as const)[type]}</span>{({ text: "Text", clock: "Uhr", image: "Bild", value: "API-Wert", weather: "Wetter", metric:"Metrik",status:"Status",list:"Liste",chart:"Chart",gauge:"Gauge" } as const)[type]}</button>)}
           </div>
           <p className="eyebrow">Seiten</p><div className="page-tabs">{document.pages.map((page,index)=><button className={page.id===activePage.id?"active":""} key={page.id} onClick={()=>{setActivePageId(page.id);setSelectedId(page.widgets[0]?.id??"");}}>{index+1}. {page.name}</button>)}</div>
           <div className="page-actions"><button onClick={addPage}>+</button><button onClick={duplicatePage}>Duplizieren</button><button onClick={()=>movePage(-1)}>↑</button><button onClick={()=>movePage(1)}>↓</button><button disabled={document.pages.length===1} onClick={deletePage}>×</button></div>
@@ -346,10 +355,10 @@ export default function Builder() {
           <p className="eyebrow">Seitennavigation</p><label className="check-label"><input type="checkbox" checked={document.pageNavigation.visible} onChange={(e)=>patchDocument({pageNavigation:{...document.pageNavigation,visible:e.target.checked}})}/> Ab zwei Seiten anzeigen</label>
           <div className="quad">{(["x","y","width","height"] as const).map((key)=><label key={key}>{key}<input type="number" min={key==="width"||key==="height"?1:0} value={document.pageNavigation[key]} onChange={(e)=>{const next={...document.pageNavigation,[key]:Number(e.target.value)};const inBounds=next.x>=0&&next.y>=0&&next.width>0&&next.height>0&&next.x+next.width<=document.settings.columns&&next.y+next.height<=document.settings.rows;const free=document.pages.every((page)=>!page.widgets.some((item)=>item.x<next.x+next.width&&item.x+item.width>next.x&&item.y<next.y+next.height&&item.y+item.height>next.y));if(inBounds&&free)patchDocument({pageNavigation:next});else setNotice({kind:"error",text:"Navigation benötigt einen freien Rasterbereich."});}}/></label>)}</div>
           <div className="inline colors"><label>Fläche<input type="color" value={document.pageNavigation.style.background} onChange={(e)=>patchDocument({pageNavigation:{...document.pageNavigation,style:{...document.pageNavigation.style,background:e.target.value}}})}/></label><label>Pfeile<input type="color" value={document.pageNavigation.style.foreground} onChange={(e)=>patchDocument({pageNavigation:{...document.pageNavigation,style:{...document.pageNavigation.style,foreground:e.target.value}}})}/></label></div>
-          <p className="eyebrow">Vorlagen</p>{templates.map((template) => <button className="template" key={template.name} onClick={() => { const next = template.create(); setDocument(next); setActivePageId(next.pages[0].id); setSelectedId(next.pages[0].widgets[0]?.id ?? ""); }}>{template.name}</button>)}
+          <p className="eyebrow">Vorlagen</p>{templates.map((template) => <button className="template" title={template.description} key={template.name} onClick={() => { const next = template.create(); setDocument(next); setActivePageId(next.pages[0].id); setSelectedId(next.pages[0].widgets[0]?.id ?? ""); }}><strong>{template.name}</strong><small>{template.category} · {template.description}</small></button>)}
           {customTemplates.map((template, index) => <button className="template" key={`${template.name}-${index}`} onClick={() => { const next = structuredClone(template.document); next.pages.forEach((page)=>{page.id=crypto.randomUUID();page.widgets.forEach((item)=>{item.id=crypto.randomUUID();});}); next.dataSources.forEach((item) => { const old=item.id; item.id=crypto.randomUUID(); next.pages.flatMap((page)=>page.widgets).filter((widget) => widget.dataSourceId===old).forEach((widget) => { widget.dataSourceId=item.id; }); item.auth={type:"none"}; }); setDocument(next); setActivePageId(next.pages[0].id); setSelectedId(next.pages[0].widgets[0]?.id ?? ""); }}>{template.name} · eigen</button>)}
           <button className="text-button" onClick={() => { const clean=structuredClone(document); clean.dataSources.forEach((source) => { source.auth={type:"none"}; }); const next=[...customTemplates,{name:document.name,document:clean}]; setCustomTemplates(next); localStorage.setItem("display-templates",JSON.stringify(next)); setNotice({kind:"ok",text:"Template ohne Zugangsdaten gespeichert."}); }}>Aktuelles Dashboard als Template speichern →</button>
-          {dashboardId && <><p className="eyebrow">Projekt</p><code>{dashboardId}</code><button className="text-button" onClick={loadDraft}>Entwurf neu laden</button><button className="button wide" onClick={createPairing}>Fallback-Code erzeugen</button>{pairingCode && <><small>10 Minuten gültiger Kopplungscode</small><code>{pairingCode}</code></>}<button className="danger-button" onClick={deleteDashboard}>Dashboard löschen</button></>}
+          {dashboardId && <><p className="eyebrow">Projekt</p><code>{dashboardId}</code><button className="text-button" onClick={loadDraft}>Entwurf neu laden</button><button className="button wide" onClick={createPairing}>Fallback-Code erzeugen</button>{pairingCode && <><small>10 Minuten gültiger Kopplungscode</small><code>{pairingCode}</code></>}<p className="eyebrow">Geräte</p>{devices.map((device)=><div className="device-card" key={device.id}><strong><i className={device.online?"online":"offline"}/> {device.name}</strong><small>{device.online?"Online":"Offline"} · App {device.app_version||"—"} · Android {device.platform_version||"—"} · Dashboard v{device.dashboard_version||"—"}</small>{device.last_error&&<em>{device.last_error}</em>} {!device.revoked_at&&<button className="danger-link" onClick={async()=>{await fetch(`/api/dashboards/${dashboardId}/devices/${device.id}`,{method:"DELETE"});setDevices((items)=>items.filter((item)=>item.id!==device.id));}}>Widerrufen</button>}</div>)}<button className="danger-button" onClick={deleteDashboard}>Dashboard löschen</button></>}
         </div>}
       </aside>
 
@@ -370,7 +379,11 @@ export default function Builder() {
         <label>Titel<input value={selected.title} onChange={(e) => patchWidget({ title: e.target.value })} /></label>
         {(selected.type === "text") && <label>Inhalt<textarea value={selected.staticValue ?? ""} onChange={(e) => patchWidget({ staticValue: e.target.value })} /></label>}
         {selected.type === "image" && <label>Bild-URL<input value={selected.imageUrl ?? ""} onChange={(e) => patchWidget({ imageUrl: e.target.value })} /></label>}
-        {(selected.type === "value" || selected.type === "weather") && <><label>Datenquelle<select value={selected.dataSourceId ?? ""} onChange={(e) => patchWidget({ dataSourceId: e.target.value })}><option value="">Auswählen …</option>{document.dataSources.map((source) => <option value={source.id} key={source.id}>{source.name}</option>)}</select></label><label>JSON-Pfad<input value={selected.jsonPath ?? ""} onChange={(e) => patchWidget({ jsonPath: e.target.value })} /></label><div className="inline"><label>Format<select value={selected.format ?? "text"} onChange={(e) => patchWidget({ format: e.target.value as Widget["format"] })}><option value="text">Text</option><option value="number">Zahl</option><option value="date">Datum</option><option value="temperature">Temperatur</option></select></label><label>Suffix<input value={selected.suffix ?? ""} onChange={(e) => patchWidget({ suffix: e.target.value })} /></label></div></>}
+        {(["value","weather","metric","status","list","chart","gauge"] as string[]).includes(selected.type) && <><label>Datenquelle<select value={selected.dataSourceId ?? ""} onChange={(e) => patchWidget({ dataSourceId: e.target.value })}><option value="">Auswählen …</option>{document.dataSources.map((source) => <option value={source.id} key={source.id}>{source.name}</option>)}</select></label><label>JSON-Pfad<input value={selected.jsonPath ?? ""} onChange={(e) => patchWidget({ jsonPath: e.target.value })} /></label><div className="inline"><label>Format<select value={selected.format ?? "text"} onChange={(e) => patchWidget({ format: e.target.value as Widget["format"] })}><option value="text">Text</option><option value="number">Zahl</option><option value="date">Datum</option><option value="temperature">Temperatur</option></select></label><label>Suffix<input value={selected.suffix ?? ""} onChange={(e) => patchWidget({ suffix: e.target.value })} /></label></div></>}
+        {selected.type==="list"&&<><label>Titelpfad<input value={selected.listTitlePath??""} onChange={(e)=>patchWidget({listTitlePath:e.target.value})}/></label><label>Untertitelpfad<input value={selected.listSubtitlePath??""} onChange={(e)=>patchWidget({listSubtitlePath:e.target.value})}/></label></>}
+        {selected.type==="gauge"&&<div className="inline"><label>Minimum<input type="number" value={selected.min??0} onChange={(e)=>patchWidget({min:Number(e.target.value)})}/></label><label>Maximum<input type="number" value={selected.max??100} onChange={(e)=>patchWidget({max:Number(e.target.value)})}/></label></div>}
+        {selected.type==="chart"&&<label>Diagramm<select value={selected.chartType??"line"} onChange={(e)=>patchWidget({chartType:e.target.value as Widget["chartType"]})}><option value="line">Linie</option><option value="bar">Balken</option><option value="sparkline">Sparkline</option></select></label>}
+        <label>Bedingte Regeln (JSON)<textarea spellCheck={false} value={JSON.stringify(selected.conditionalRules??[],null,2)} onChange={(e)=>{try{patchWidget({conditionalRules:JSON.parse(e.target.value)})}catch{}}}/></label>
         <p className="canvas-hint">Im Canvas ziehen · An Kanten oder Ecken skalieren</p>
         <details className="pro-settings"><summary>Profi: Position & Größe</summary><div className="quad">{(["x","y","width","height"] as const).map((key) => <label key={key}>{key}<input type="number" min={key === "width" || key === "height" ? 1 : 0} max={key === "x" || key === "width" ? 12 : 8} value={selected[key]} onChange={(e) => {const next={...selected,[key]:Number(e.target.value)};if(placementIsFree(document,activePage,next,selected.id))patchWidget({[key]:Number(e.target.value)});else setNotice({kind:"error",text:"Position ist belegt oder außerhalb des Rasters."});}} /></label>)}</div></details>
         <p className="eyebrow">Darstellung</p><div className="inline colors"><label>Fläche<input type="color" value={selected.style.background} onChange={(e) => patchStyle({ background: e.target.value })} /></label><label>Text<input type="color" value={selected.style.foreground} onChange={(e) => patchStyle({ foreground: e.target.value })} /></label></div>
