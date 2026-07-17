@@ -10,7 +10,9 @@ services:
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3000}
+      # Public canonical origin used in dashboard, asset, and QR-pairing URLs.
+      # Local .env files can override this with http://localhost:3000.
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://kmuc.app}
       SECRET_STORE_MASTER_KEY: ${SECRET_STORE_MASTER_KEY}
       COLLECTOR_TOKEN: ${COLLECTOR_TOKEN}
     ports:

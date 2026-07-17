@@ -47,13 +47,13 @@ Die Web-Anwendung benötigt ausschließlich:
 SUPABASE_URL=https://supabase.example.org
 SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
-PUBLIC_APP_URL=https://display.example.org
+PUBLIC_APP_URL=https://kmuc.app
 WEB_PORT=3000
 SECRET_STORE_MASTER_KEY=...
 COLLECTOR_TOKEN=...
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY` ist ausschließlich serverseitig erlaubt. `SECRET_STORE_MASTER_KEY` verschlüsselt API-Secrets mit AES-256-GCM und muss dauerhaft gesichert werden; `COLLECTOR_TOKEN` schützt den internen Collector-Aufruf. `PUBLIC_APP_URL` ist die von Geräten und Browsern erreichbare öffentliche Basis-URL der Web-Anwendung; sie verhindert interne Hostnamen in erzeugten Display- und Asset-URLs. TLS ist vor Next.js und Supabase Pflicht. `docker compose up -d --build` startet Web-Anwendung und Collector und verbindet sie mit der bereits laufenden Supabase-Installation.
+`SUPABASE_SERVICE_ROLE_KEY` ist ausschließlich serverseitig erlaubt. `SECRET_STORE_MASTER_KEY` verschlüsselt API-Secrets mit AES-256-GCM und muss dauerhaft gesichert werden; `COLLECTOR_TOKEN` schützt den internen Collector-Aufruf. `PUBLIC_APP_URL` ist die von Geräten und Browsern erreichbare öffentliche Basis-URL der Web-Anwendung; sie verhindert interne Hostnamen in erzeugten Display-, Asset- und QR-Pairing-URLs. In Produktion ist sie `https://kmuc.app`; TLS ist vor Next.js und Supabase Pflicht. `docker compose up -d --build` startet Web-Anwendung und Collector und verbindet sie mit der bereits laufenden Supabase-Installation.
 
 ## API-Kern
 
