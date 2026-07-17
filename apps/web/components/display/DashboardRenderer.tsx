@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type HTMLAttributes, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from "react";
 import { effectiveWidget, formatValue, matchesRule, valueAtPath, type DashboardDocument, type Widget } from "../../lib/dashboard";
 
 export interface RuntimeState {
@@ -63,7 +63,8 @@ export function DisplayWidget({ widget, runtime, className = "", children, artic
   const rendered = widgetContent(effective, raw, runtime?.history ?? []);
   const ruled = rule?.text || rule?.icon ? <>{rule.icon ? `${rule.icon} ` : ""}{rule.text ?? rendered}</> : rendered;
   const content = showError ? runtime?.error : hideValue ? "—" : ruled;
-  return <article {...articleProps} data-widget-type={effective.type} className={`canvas-widget animation-${effective.animation ?? "none"}${runtime?.stale ? " is-stale" : ""}${hasError ? " has-error" : ""} ${className}`} style={{ gridColumn: `${effective.x + 1} / span ${effective.width}`, gridRow: `${effective.y + 1} / span ${effective.height}`, background: effective.style.background, color: effective.style.foreground, textAlign: effective.style.align }}>
+  const fontScale = Math.max(25, Math.min(300, effective.style.fontScale ?? 100)) / 100;
+  return <article {...articleProps} data-widget-type={effective.type} data-vertical-align={effective.style.verticalAlign ?? "center"} className={`canvas-widget animation-${effective.animation ?? "none"}${runtime?.stale ? " is-stale" : ""}${hasError ? " has-error" : ""} ${className}`} style={{ gridColumn: `${effective.x + 1} / span ${effective.width}`, gridRow: `${effective.y + 1} / span ${effective.height}`, background: effective.style.background, color: effective.style.foreground, textAlign: effective.style.align, "--widget-font-scale": fontScale } as CSSProperties}>
     <small>{effective.title}</small><div className="widget-value">{content}</div>
     {runtime?.stale && <span className="widget-state">Veraltet</span>}
     {children}

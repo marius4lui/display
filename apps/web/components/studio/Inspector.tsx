@@ -81,6 +81,18 @@ export function Inspector({ document, page, selected, onPatch, onDelete, onDupli
             {(["left", "center", "right"] as const).map((align) => <button className={selected.style.align === align ? "active" : ""} key={align} onClick={() => patchStyle({ align })}>{align === "left" ? "Links" : align === "center" ? "Mitte" : "Rechts"}</button>)}
           </span>
         </label>
+        <label>Vertikale Position
+          <span className="segmented">
+            {(["top", "center", "bottom"] as const).map((verticalAlign) => <button className={(selected.style.verticalAlign ?? "center") === verticalAlign ? "active" : ""} key={verticalAlign} onClick={() => patchStyle({ verticalAlign })}>{verticalAlign === "top" ? "Oben" : verticalAlign === "center" ? "Mitte" : "Unten"}</button>)}
+          </span>
+        </label>
+        <label>Schriftgröße
+          <span className="range-control">
+            <input type="range" min="25" max="300" step="5" value={selected.style.fontScale ?? 100} onChange={(event) => patchStyle({ fontScale: Number(event.target.value) })}/>
+            <input type="number" min="25" max="300" step="5" value={selected.style.fontScale ?? 100} onChange={(event) => patchStyle({ fontScale: Math.max(25, Math.min(300, Number(event.target.value) || 100)) })}/>
+            <span>%</span>
+          </span>
+        </label>
       </section>
 
       <section className="inspector-section">

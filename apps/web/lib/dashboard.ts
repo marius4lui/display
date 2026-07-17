@@ -43,7 +43,14 @@ export interface Widget {
   conditionalRules?: ConditionalRule[];
   animation?: "none" | "pulse" | "float" | "glow";
   errorBehavior: ErrorBehavior;
-  style: { background: string; foreground: string; accent: string; align: "left" | "center" | "right" };
+  style: {
+    background: string;
+    foreground: string;
+    accent: string;
+    align: "left" | "center" | "right";
+    verticalAlign?: "top" | "center" | "bottom";
+    fontScale?: number;
+  };
 }
 
 export interface DashboardPage {
@@ -84,7 +91,7 @@ export interface LegacyDashboardDocument extends Omit<DashboardDocument, "schema
 
 const widget = (type: WidgetType, title: string, x: number, y: number, width: number, height: number): Widget => ({
   id: crypto.randomUUID(), type, title, x, y, width, height, errorBehavior: "stale", animation: "none",
-  style: { background: "#151b2b", foreground: "#f6f7fb", accent: "#7c5cff", align: "left" },
+  style: { background: "#151b2b", foreground: "#f6f7fb", accent: "#7c5cff", align: "left", verticalAlign: "center", fontScale: 100 },
 });
 
 export const blankDashboard = (): DashboardDocument => ({
