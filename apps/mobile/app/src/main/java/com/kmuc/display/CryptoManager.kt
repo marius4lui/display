@@ -13,7 +13,12 @@ class SecureStore(private val context: android.content.Context) {
     private val preferences = context.getSharedPreferences("display_secure", android.content.Context.MODE_PRIVATE)
     private val alias = "display-device-key"
 
-    init { preferences.edit().remove("secret").remove("iv").remove("cached_envelope").apply() }
+    init {
+        preferences.edit()
+            .remove("secret").remove("iv").remove("cached_envelope")
+            .remove("cached_document")
+            .apply()
+    }
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -28,7 +33,15 @@ class SecureStore(private val context: android.content.Context) {
         val changedUrl = preferences.getString("url", null) != url
         val tokenCipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val encryptedToken = tokenCipher.doFinal(deviceToken.toByteArray(Charsets.UTF_8))
-        preferences.edit().putString("url", url).remove("secret").remove("iv").putString("device_token", Base64.encodeToString(encryptedToken, Base64.NO_WRAP)).putString("device_token_iv", Base64.encodeToString(tokenCipher.iv, Base64.NO_WRAP)).putInt("config_poll", configPollOverride ?: 0).putInt("data_poll", dataPollOverride ?: 0).also { if (changedUrl) it.remove("etag").remove("cached_document") }.apply()
+        preferences.edit().putString("url", url).remove("secret").remove("iv").putString("device_token", Base64.encodeToString(encryptedToken, Base64.NO_WRAP)).putString("device_token_iv", Base64.encodeToString(tokenCipher.iv, Base64.NO_WRAP)).putInt("config_poll", configPollOverride ?: 0).putInt("data_poll", dataPollOverride ?: 0).also {
+            if (changedUrl) it
+                .remove("etag")
+                .remove("cached_document")
+                .remove("cached_document_ciphertext")
+                .remove("cached_document_iv")
+                .remove("cached_document_id")
+                .remove("cached_document_version")
+        }.apply()
     }
 
     fun url(): String? = preferences.getString("url", null)
@@ -41,8 +54,31 @@ class SecureStore(private val context: android.content.Context) {
         String(cipher.doFinal(encrypted), Charsets.UTF_8)
     } catch (_: Exception) { null }
 
-    fun cacheDocument(json: String) = preferences.edit().putString("cached_document", json).apply()
-    fun cachedDocument(): String? = preferences.getString("cached_document", null)
+    fun cacheDocument(dashboardId: String, version: Int, json: String) {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+            init(Cipher.ENCRYPT_MODE, key())
+            updateAAD("$dashboardId:$version".toByteArray(Charsets.UTF_8))
+        }
+        val encrypted = cipher.doFinal(json.toByteArray(Charsets.UTF_8))
+        preferences.edit()
+            .putString("cached_document_ciphertext", Base64.encodeToString(encrypted, Base64.NO_WRAP))
+            .putString("cached_document_iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
+            .putString("cached_document_id", dashboardId)
+            .putInt("cached_document_version", version)
+            .apply()
+    }
+
+    fun cachedDocument(): String? = try {
+        val dashboardId = preferences.getString("cached_document_id", null) ?: return null
+        val version = preferences.getInt("cached_document_version", 0).takeIf { it > 0 } ?: return null
+        val encrypted = Base64.decode(preferences.getString("cached_document_ciphertext", null), Base64.DEFAULT)
+        val iv = Base64.decode(preferences.getString("cached_document_iv", null), Base64.DEFAULT)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+            init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, iv))
+            updateAAD("$dashboardId:$version".toByteArray(Charsets.UTF_8))
+        }
+        String(cipher.doFinal(encrypted), Charsets.UTF_8)
+    } catch (_: Exception) { null }
     fun savePendingState(value: String) = preferences.edit().putString("pending_state", value).apply()
     fun consumePendingState(value: String): Boolean {
         if (preferences.getString("pending_state", null) != value) return false
@@ -50,5 +86,13 @@ class SecureStore(private val context: android.content.Context) {
     }
     fun etag(): String? = preferences.getString("etag", null)
     fun saveEtag(value: String?) = preferences.edit().putString("etag", value).apply()
-    fun clear() = preferences.edit().clear().apply()
+    fun clear() {
+        preferences.edit().clear().apply()
+        runCatching {
+            KeyStore.getInstance("AndroidKeyStore").apply {
+                load(null)
+                deleteEntry(alias)
+            }
+        }
+    }
 }

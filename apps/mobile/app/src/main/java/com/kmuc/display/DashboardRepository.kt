@@ -121,18 +121,17 @@ class DashboardController(context: Context) {
     private suspend fun checkConfiguration(url: String) {
         try {
             status = "Prüfe Konfiguration …"
-            val response = request(url, store.etag())
+            val response = request(url, if (dashboard != null) store.etag() else null)
             if (response.status == HttpURLConnection.HTTP_NOT_MODIFIED) {
                 status = "Live · Version $version"
                 return
             }
             val published = parsePublishedDashboard(response.body)
-            if (published.version != version || dashboard == null) {
-                dashboard = published.document
-                version = published.version
-                store.cacheDocument(response.body)
-                sourceLastRun.clear()
-            }
+            dashboard = published.document
+            version = published.version
+            val dashboardId = URL(url).path.trimEnd('/').substringAfterLast('/')
+            store.cacheDocument(dashboardId, published.version, response.body)
+            sourceLastRun.clear()
             store.saveEtag(response.etag)
             status = "Live · Version $version"
         } catch (error: Exception) {
@@ -145,17 +144,27 @@ class DashboardController(context: Context) {
         val current = dashboard ?: return
         if (current.dataSources.isEmpty()) return
         val now = System.currentTimeMillis()
-        val interval = (store.dataPollOverride() ?: current.settings.dataPollSeconds).coerceAtLeast(10) * 1_000L
-        if (now - (sourceLastRun["runtime"] ?: 0L) < interval) return
-        sourceLastRun["runtime"] = now
-        try {
-            val root = JSONObject(request(store.url().orEmpty().trimEnd('/') + "/runtime?days=7", null).body)
-            val history = mutableMapOf<String, MutableList<Any?>>()
-            val samples = root.optJSONArray("samples") ?: org.json.JSONArray()
-            for (index in 0 until samples.length()) { val sample=samples.getJSONObject(index); history.getOrPut(sample.getString("source_id")){mutableListOf()}.add(sample.opt("value")) }
-            val runtime = root.optJSONArray("runtime") ?: org.json.JSONArray()
-            for (index in 0 until runtime.length()) { val item=runtime.getJSONObject(index); val id=item.getString("source_id"); values[id]=RuntimeValue(item.opt("value"), error=item.optString("error").takeIf(String::isNotBlank), stale=!item.isNull("error"), history=history[id].orEmpty()) }
-        } catch (error: Exception) { values.keys.forEach { id -> values[id]=values[id]?.copy(stale=true,error=error.userMessage()) ?: RuntimeValue(null,error=error.userMessage()) } }
+        for (source in current.dataSources) {
+            val interval = (store.dataPollOverride() ?: source.refreshSeconds ?: current.settings.dataPollSeconds).coerceAtLeast(10) * 1_000L
+            if (now - (sourceLastRun[source.id] ?: 0L) < interval) continue
+            sourceLastRun[source.id] = now
+            try {
+                val result = fetchSource(source)
+                val previous = values[source.id]
+                values[source.id] = RuntimeValue(
+                    value = result,
+                    history = (previous?.history.orEmpty() + result).takeLast(2_048),
+                )
+            } catch (error: Exception) {
+                val previous = values[source.id]
+                values[source.id] = RuntimeValue(
+                    value = previous?.value,
+                    stale = previous?.value != null,
+                    error = error.sourceUserMessage(),
+                    history = previous?.history.orEmpty(),
+                )
+            }
+        }
     }
 
     private suspend fun sendHeartbeat(url: String) = withContext(Dispatchers.IO) {
@@ -183,9 +192,10 @@ class DashboardController(context: Context) {
             connection.outputStream.use { it.write(source.body.toByteArray()) }
         }
         val code = connection.responseCode
-        if (code !in 200..299) throw httpFailure(connection)
-        val text = connection.inputStream.bufferedReader().use { it.readText() }
-        JSONTokener(text).nextValue()
+        if (code !in 200..299) throw IllegalStateException("HTTP $code")
+        val bytes = connection.inputStream.use { it.readNBytes(1_048_577) }
+        if (bytes.size > 1_048_576) throw IllegalStateException("Antwort überschreitet 1 MB")
+        JSONTokener(String(bytes, Charsets.UTF_8)).nextValue()
     }
 
     private suspend fun request(url: String, etag: String?): HttpResult = withContext(Dispatchers.IO) {
@@ -212,3 +222,12 @@ class DashboardController(context: Context) {
 }
 
 private fun Throwable.userMessage(): String = message?.takeIf { it.isNotBlank() } ?: "Dashboard nicht verfügbar"
+
+private fun Throwable.sourceUserMessage(): String = when (this) {
+    is java.net.SocketTimeoutException -> "Zeitüberschreitung"
+    is java.net.UnknownHostException -> "Server nicht gefunden"
+    is javax.net.ssl.SSLException -> "Sichere Verbindung fehlgeschlagen"
+    is org.json.JSONException -> "Antwort ist kein gültiges JSON"
+    is IllegalStateException -> message?.takeIf { it.startsWith("HTTP ") || it == "Antwort überschreitet 1 MB" } ?: "Datenquelle nicht verfügbar"
+    else -> "Datenquelle nicht verfügbar"
+}
