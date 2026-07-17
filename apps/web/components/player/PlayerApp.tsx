@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { DashboardRenderer, type RuntimeState } from "../display/DashboardRenderer";
 import type { DashboardDocument, DataSource } from "../../lib/dashboard";
+import { createSilkKeepAwake, isSilkUserAgent, type SilkKeepAwake } from "../../lib/client/silkKeepAwake";
 
 type PlayerConfig = { id: string; version: number; publishedAt: string; document: DashboardDocument };
 type Cache = { config?: PlayerConfig; runtime?: Record<string, RuntimeState>; savedAt?: string };
@@ -78,6 +79,8 @@ export default function PlayerApp() {
   const [menu, setMenu] = useState(false);
   const [notice, setNotice] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const silkKeepAwake = useRef<SilkKeepAwake | null>(null);
+  const isSilk = typeof navigator !== "undefined" && isSilkUserAgent(navigator.userAgent);
   const etag = useRef("");
   const configLoading = useRef(false);
   const lastSync = useRef<string | null>(null);
@@ -165,6 +168,30 @@ export default function PlayerApp() {
     return () => document.removeEventListener("fullscreenchange", changed);
   }, []);
   useEffect(() => {
+    if (!config || !isSilk) return;
+    const keepAwake = createSilkKeepAwake();
+    silkKeepAwake.current = keepAwake;
+    if (!keepAwake) return;
+
+    const activate = () => void keepAwake.activate();
+    const resume = () => {
+      if (document.visibilityState === "visible") keepAwake.resume();
+    };
+    document.addEventListener("pointerdown", activate);
+    document.addEventListener("keydown", activate);
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("focus", resume);
+
+    return () => {
+      document.removeEventListener("pointerdown", activate);
+      document.removeEventListener("keydown", activate);
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("focus", resume);
+      keepAwake.destroy();
+      if (silkKeepAwake.current === keepAwake) silkKeepAwake.current = null;
+    };
+  }, [config?.id, isSilk]);
+  useEffect(() => {
     if (!config || document.fullscreenElement || !document.fullscreenEnabled) return;
     void document.documentElement.requestFullscreen().catch(() => {});
   }, [config?.version]);
@@ -229,9 +256,11 @@ export default function PlayerApp() {
     } catch { setNotice("Die Verbindung konnte nicht getrennt werden. Bitte Netzwerk prüfen."); window.setTimeout(() => setNotice(""), 3500); }
   }
   async function fullscreen() {
+    const keepAwakePromise = silkKeepAwake.current?.activate();
     try {
       if (!document.fullscreenEnabled) throw new Error();
-      await document.documentElement.requestFullscreen();
+      const fullscreenPromise = document.documentElement.requestFullscreen();
+      await Promise.all([fullscreenPromise, keepAwakePromise]);
       setMenu(false);
     }
     catch { setNotice("Vollbild muss durch eine direkte Nutzeraktion erlaubt werden."); window.setTimeout(() => setNotice(""), 3500); }
