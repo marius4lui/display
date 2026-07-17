@@ -63,7 +63,7 @@ export function DisplayWidget({ widget, runtime, className = "", children, artic
   const rendered = widgetContent(effective, raw, runtime?.history ?? []);
   const ruled = rule?.text || rule?.icon ? <>{rule.icon ? `${rule.icon} ` : ""}{rule.text ?? rendered}</> : rendered;
   const content = showError ? runtime?.error : hideValue ? "—" : ruled;
-  return <article {...articleProps} className={`canvas-widget animation-${effective.animation ?? "none"}${runtime?.stale ? " is-stale" : ""}${hasError ? " has-error" : ""} ${className}`} style={{ gridColumn: `${effective.x + 1} / span ${effective.width}`, gridRow: `${effective.y + 1} / span ${effective.height}`, background: effective.style.background, color: effective.style.foreground, textAlign: effective.style.align }}>
+  return <article {...articleProps} data-widget-type={effective.type} className={`canvas-widget animation-${effective.animation ?? "none"}${runtime?.stale ? " is-stale" : ""}${hasError ? " has-error" : ""} ${className}`} style={{ gridColumn: `${effective.x + 1} / span ${effective.width}`, gridRow: `${effective.y + 1} / span ${effective.height}`, background: effective.style.background, color: effective.style.foreground, textAlign: effective.style.align }}>
     <small>{effective.title}</small><div className="widget-value">{content}</div>
     {runtime?.stale && <span className="widget-state">Veraltet</span>}
     {children}

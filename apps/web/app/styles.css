@@ -497,11 +497,14 @@ svg { width: 18px; height: 18px; }
   display: flex;
   min-width: 0;
   min-height: 0;
+  container: widget / size;
   flex-direction: column;
   justify-content: space-between;
   padding: clamp(9px, 1.25vw, 20px);
+  padding: clamp(6px, min(5cqw, 7cqh), 26px);
   overflow: visible;
   border-radius: clamp(6px, .75vw, 12px);
+  border-radius: clamp(6px, min(4cqw, 6cqh), 18px);
   box-shadow: inset 0 1px #ffffff0b;
   cursor: grab;
 }
@@ -509,13 +512,18 @@ svg { width: 18px; height: 18px; }
 .canvas-widget > small {
   opacity: .6;
   font-size: clamp(7px, .7vw, 11px);
+  font-size: clamp(7px, min(4.2cqw, 7cqh), 18px);
   font-weight: 600;
   letter-spacing: .05em;
   text-transform: uppercase;
 }
 .canvas-widget.selected { outline: 1.5px solid #9e8dff; outline-offset: 2px; }
-.widget-value { min-height: 0; overflow: hidden; font: 600 clamp(14px, 2.7vw, 45px) "Space Grotesk"; line-height: 1.05; white-space: pre-wrap; }
-.widget-weather { display: flex; align-items: flex-end; gap: clamp(5px, 1vw, 14px); }
+.widget-value { min-height: 0; overflow: hidden; font: 600 clamp(14px, 2.7vw, 45px) "Space Grotesk"; font-size: clamp(12px, min(15cqw, 28cqh), 92px); line-height: 1.05; white-space: pre-wrap; }
+.canvas-widget[data-widget-type="text"] .widget-value { font-size: clamp(11px, min(10cqw, 20cqh), 66px); line-height: 1.15; }
+.canvas-widget[data-widget-type="status"] .widget-value { font-size: clamp(11px, min(12cqw, 23cqh), 76px); }
+.canvas-widget[data-widget-type="list"] .widget-value,
+.canvas-widget[data-widget-type="chart"] .widget-value { width: 100%; height: 100%; }
+.widget-weather { display: flex; align-items: flex-end; gap: clamp(5px, min(4cqw, 6cqh), 20px); }
 .widget-weather i { color: currentColor; font-size: 1.05em; font-style: normal; }
 .widget-value img, .canvas-widget > img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
 .resize-handle {
@@ -550,7 +558,7 @@ svg { width: 18px; height: 18px; }
 .page-navigation span { opacity: .7; font-size: clamp(7px, .7vw, 11px); }
 .canvas-widget.is-stale { filter: saturate(.72); }
 .canvas-widget.has-error { outline: 1px solid #ff829655; }
-.widget-state { position: absolute; right: 8px; bottom: 6px; color: #ffd08a; font-size: clamp(7px, .65vw, 10px); opacity: .85; }
+.widget-state { position: absolute; right: clamp(5px, 3cqw, 14px); bottom: clamp(4px, 3cqh, 12px); color: #ffd08a; font-size: clamp(7px, min(3.5cqw, 5cqh), 14px); opacity: .85; }
 
 .player-pair { display: grid; min-height: 100dvh; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 0, #242042, #090b12 55%); color: #f6f7fb; }
 .player-card { display: grid; width: min(420px, 100%); gap: 18px; padding: 32px; border: 1px solid #34394b; border-radius: 18px; background: #111520; box-shadow: 0 30px 80px #0008; }
@@ -595,12 +603,12 @@ svg { width: 18px; height: 18px; }
 }
 .studio-notice.ok { border-color: #315e49; background: #173526; color: #81dfac; }
 .studio-notice.error { border-color: #65303e; background: #361821; color: #ff91a4; }
-.widget-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font: 500 clamp(7px, .9vw, 13px) "DM Sans"; }
-.widget-list li { display: flex; justify-content: space-between; gap: 7px; padding-bottom: 3px; border-bottom: 1px solid #ffffff14; }
+.widget-list { display: grid; gap: clamp(2px, 2cqh, 10px); margin: 0; padding: 0; list-style: none; font: 500 clamp(7px, min(4.5cqw, 7cqh), 24px) "DM Sans"; }
+.widget-list li { display: flex; justify-content: space-between; gap: clamp(4px, 3cqw, 16px); padding-bottom: clamp(2px, 1.5cqh, 8px); border-bottom: 1px solid #ffffff14; }
 .widget-list span { opacity: .65; }
-.widget-gauge { position: relative; display: grid; width: min(75%, 145px); margin: auto; aspect-ratio: 1; place-items: center; border-radius: 50%; }
+.widget-gauge { position: relative; display: grid; width: min(75%, 70cqw, 70cqh); margin: auto; aspect-ratio: 1; place-items: center; border-radius: 50%; }
 .widget-gauge::before { position: absolute; inset: 15%; border-radius: 50%; background: #151b2b; content: ""; }
-.widget-gauge span { position: relative; font-size: .5em; }
+.widget-gauge span { position: relative; font-size: clamp(9px, min(7cqw, 12cqh), 48px); }
 .widget-chart { width: 100%; height: 100%; min-height: 30px; }
 .animation-pulse .widget-value { animation: pulse 2s infinite; }
 .animation-float .widget-value { animation: float 3s ease-in-out infinite; }
