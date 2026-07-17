@@ -1,51 +1,37 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { parsedResponseBody, requestHeaders, type ApiDiagnostic } from "../lib/api-diagnostics";
+import { useEffect, useState } from "react";
+import { requestHeaders, type ApiDiagnostic } from "../lib/api-diagnostics";
 import type { DataSource } from "../lib/dashboard";
+import { KeyValueEditor } from "./api-studio/KeyValueEditor";
+import { ResponseViewer } from "./api-studio/ResponseViewer";
+import { SecretManager } from "./api-studio/SecretManager";
+import { Icon } from "./studio/Icons";
 
 type JsonLeaf = { path: string; value: unknown };
-function jsonLeaves(value: unknown, path = "", result: JsonLeaf[] = []): JsonLeaf[] {
-  if (value !== null && typeof value === "object") {
-    const entries = Array.isArray(value) ? value.map((item, index) => [String(index), item] as const) : Object.entries(value as Record<string, unknown>);
-    if (!entries.length) result.push({ path, value });
-    entries.forEach(([key, item]) => jsonLeaves(item, path ? `${path}.${key}` : key, result));
-  } else result.push({ path, value });
-  return result;
-}
+type RequestTab = "params" | "headers" | "auth" | "body" | "variables";
+const methods: DataSource["method"][] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
-const secretHeader = (key: string) => /authorization|api[-_]?key|token|secret|cookie/i.test(key);
-const redact = (headers: Record<string, string>, reveal: boolean) => Object.fromEntries(Object.entries(headers).map(([key, value]) => [key, !reveal && secretHeader(key) ? "••••••••" : value]));
-const pretty = (body: string, contentType = "") => {
-  if (!body) return "(leer)";
-  if (!contentType.includes("json")) return body;
-  try { return JSON.stringify(JSON.parse(body), null, 2); } catch { return body; }
-};
-const headerText = (headers: Record<string, string>) => Object.entries(headers).map(([key, value]) => `${key}: ${value}`).join("\n") || "(keine)";
-
-export default function ApiWorkbench({ sources, onAdd, onPatch, onRemove, onData, onMap, onClose }: {
+export default function ApiWorkbench({ sources, initialSourceId, onAdd, onPatch, onRemove, onData, onStatus, onMap, onClose }: {
   sources: DataSource[];
+  initialSourceId?: string;
   onAdd: () => string;
   onPatch: (id: string, patch: Partial<DataSource>) => void;
   onRemove: (id: string) => void;
   onData: (id: string, data: unknown) => void;
+  onStatus: (id: string, ok: boolean) => void;
   onMap: (source: DataSource, leaf: JsonLeaf, create?: boolean) => void;
   onClose: () => void;
 }) {
-  const [selectedId, setSelectedId] = useState(sources[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState(initialSourceId || sources[0]?.id || "");
+  const [requestTab, setRequestTab] = useState<RequestTab>("params");
   const [diagnostics, setDiagnostics] = useState<Record<string, ApiDiagnostic>>({});
   const [busyId, setBusyId] = useState("");
-  const [revealSecrets, setRevealSecrets] = useState(false);
-  const [secrets, setSecrets] = useState<Array<{id:string;name:string}>>([]);
-  const [secretName, setSecretName] = useState(""); const [secretValue, setSecretValue] = useState("");
-  const [fieldSearch, setFieldSearch] = useState("");
+  const [secretsOpen, setSecretsOpen] = useState(false);
   const source = sources.find((item) => item.id === selectedId) ?? sources[0];
   const diagnostic = source ? diagnostics[source.id] : undefined;
-  const json = diagnostic ? parsedResponseBody(diagnostic) : undefined;
-  const leaves = useMemo(() => json === undefined ? [] : jsonLeaves(json).filter((leaf)=>!fieldSearch||leaf.path.toLowerCase().includes(fieldSearch.toLowerCase())||String(leaf.value).toLowerCase().includes(fieldSearch.toLowerCase())).slice(0, 500), [json,fieldSearch]);
-  const loadSecrets=()=>fetch("/api/secrets").then((response)=>response.ok?response.json():{secrets:[]}).then((result)=>setSecrets(result.secrets));
-  useEffect(()=>{void loadSecrets()},[]);
-  const saveSecret=async()=>{if(!secretName||!secretValue)return;const response=await fetch("/api/secrets",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:secretName,value:secretValue})});if(response.ok){setSecretName("");setSecretValue("");await loadSecrets();}};
+
+  useEffect(() => { if (initialSourceId && sources.some((item) => item.id === initialSourceId)) setSelectedId(initialSourceId); }, [initialSourceId, sources]);
 
   const test = async () => {
     if (!source) return;
@@ -55,45 +41,77 @@ export default function ApiWorkbench({ sources, onAdd, onPatch, onRemove, onData
       const result = await response.json() as { diagnostic?: ApiDiagnostic; error?: { code?: string; message?: string } };
       if (!response.ok || !result.diagnostic) throw new Error(`${result.error?.code ? `${result.error.code}: ` : ""}${result.error?.message ?? `HTTP ${response.status}`}`);
       setDiagnostics((current) => ({ ...current, [source.id]: result.diagnostic! }));
-      const data = parsedResponseBody(result.diagnostic);
-      if (data !== undefined) onData(source.id, data);
+      onStatus(source.id, result.diagnostic.ok);
+      if (result.diagnostic.response?.contentType.includes("json")) {
+        try { onData(source.id, JSON.parse(result.diagnostic.response.body)); } catch {}
+      }
     } catch (error) {
       const now = new Date().toISOString();
-      setDiagnostics((current) => ({ ...current, [source.id]: { ok: false, startedAt: now, durationMs: 0, request: { method: source.method, url: source.url, headers: requestHeaders(source), body: source.method === "GET" ? null : source.body ?? "" }, error: { code: "DIAGNOSTIC_ENDPOINT_ERROR", title: "Diagnose konnte nicht ausgeführt werden", detail: error instanceof Error ? error.message : String(error), hint: "Anmeldung und den lokalen Display-Server prüfen." } } }));
+      const failed: ApiDiagnostic = { ok: false, startedAt: now, durationMs: 0, request: { method: source.method, url: source.url, headers: requestHeaders(source), body: source.method === "GET" ? null : source.body ?? "" }, error: { code: "DIAGNOSTIC_ENDPOINT_ERROR", title: "Diagnose konnte nicht ausgeführt werden", detail: error instanceof Error ? error.message : String(error), hint: "Anmeldung und den lokalen Display-Server prüfen." } };
+      setDiagnostics((current) => ({ ...current, [source.id]: failed }));
+      onStatus(source.id, false);
     } finally { setBusyId(""); }
   };
 
-  return <section className="api-workbench">
-    <header className="api-heading">
-      <div><span className="eyebrow">API Studio</span><h1>Requests vollständig verstehen.</h1><p>Konfiguration, Netzwerkdiagnose, kompletter Request und komplette Response an einem Ort.</p></div>
-      <div className="api-heading-actions"><button className="button ghost" onClick={onClose}>← Dashboard</button><button className="button primary" onClick={() => setSelectedId(onAdd())}>+ Datenquelle</button></div>
-    </header>
-    <div className="api-layout">
-      <aside className="api-source-list">
-        <div className="api-list-title"><strong>Datenquellen</strong><span>{sources.length}</span></div>
-        {sources.map((item) => <button key={item.id} className={item.id === source?.id ? "active" : ""} onClick={() => setSelectedId(item.id)}><span className={`method method-${item.method.toLowerCase()}`}>{item.method}</span><span><strong>{item.name}</strong><small>{item.url || "Keine URL"}</small></span>{diagnostics[item.id] && <i className={diagnostics[item.id].ok ? "ok" : "error"} />}</button>)}
-        {!sources.length && <p className="empty-state">Noch keine Datenquelle. Lege eine API an, um den ersten Request zu testen.</p>}
-      </aside>
-      {source ? <main className="api-main">
-        <section className="api-card api-config">
-          <div className="api-card-title"><div><h2>Request konfigurieren</h2><p>Diese Werte werden beim Dashboard gespeichert.</p></div><button className="danger-link" onClick={() => onRemove(source.id)}>Entfernen</button></div>
-          <div className="api-form-grid"><label>Name<input value={source.name} onChange={(event) => onPatch(source.id, { name: event.target.value })} /></label><label className="url-field">Endpoint<div className="request-line"><select value={source.method} onChange={(event) => onPatch(source.id, { method: event.target.value as DataSource["method"] })}>{["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => <option key={method}>{method}</option>)}</select><input value={source.url} onChange={(event) => onPatch(source.id, { url: event.target.value })} /></div></label></div>
-          <div className="api-form-grid"><label>Header<textarea spellCheck={false} placeholder={'Accept: application/json\nAuthorization: Bearer {{secret.API_TOKEN}}'} value={Object.entries(source.headers).map(([key, value]) => `${key}: ${value}`).join("\n")} onChange={(event) => onPatch(source.id, { headers: Object.fromEntries(event.target.value.split("\n").map((line) => { const index = line.indexOf(":"); return index > 0 ? [line.slice(0, index).trim(), line.slice(index + 1).trim()] : ["", ""]; }).filter(([key]) => key)) })} /></label><label>JSON / Request-Body<textarea spellCheck={false} disabled={source.method === "GET"} value={source.body ?? ""} onChange={(event) => onPatch(source.id, { body: event.target.value })} placeholder={source.method === "GET" ? "GET sendet keinen Body" : '{"key":"{{var.VALUE}}"}'} /></label></div>
-          <div className="api-form-grid"><label>Query-Parameter<textarea spellCheck={false} placeholder="limit: 10" value={Object.entries(source.query??{}).map(([key,value])=>`${key}: ${value}`).join("\n")} onChange={(event)=>onPatch(source.id,{query:Object.fromEntries(event.target.value.split("\n").map((line)=>{const index=line.indexOf(":");return index>0?[line.slice(0,index).trim(),line.slice(index+1).trim()]:["",""]}).filter(([key])=>key))})}/></label><label>Variablen<textarea spellCheck={false} placeholder="TENANT: demo" value={Object.entries(source.variables??{}).map(([key,value])=>`${key}: ${value}`).join("\n")} onChange={(event)=>onPatch(source.id,{variables:Object.fromEntries(event.target.value.split("\n").map((line)=>{const index=line.indexOf(":");return index>0?[line.slice(0,index).trim(),line.slice(index+1).trim()]:["",""]}).filter(([key])=>key))})}/></label></div>
-          <div className="secret-manager"><strong>Secret Store</strong><div className="inline"><input placeholder="NAME" value={secretName} onChange={(event)=>setSecretName(event.target.value.replace(/[^A-Za-z0-9_]/g,""))}/><input type="password" placeholder="Wert (write-only)" value={secretValue} onChange={(event)=>setSecretValue(event.target.value)}/><button className="button ghost" onClick={saveSecret}>Speichern</button></div><small>{secrets.length?secrets.map((item)=>`{{secret.${item.name}}}`).join(" · "):"Noch keine Secrets"}</small></div>
-          <div className="auth-row"><label>Authentifizierung<select value={source.auth.type} onChange={(event) => onPatch(source.id, { auth: { type: event.target.value as DataSource["auth"]["type"] } })}><option value="none">Keine</option><option value="apiKey">API-Key</option><option value="bearer">Bearer Token</option><option value="basic">Basic Auth</option></select></label>{source.auth.type === "apiKey" && <><label>Header-Name<input value={source.auth.name ?? "X-API-Key"} onChange={(event) => onPatch(source.id, { auth: { ...source.auth, name: event.target.value } })} /></label><label>API-Key<input type="password" value={source.auth.value ?? ""} onChange={(event) => onPatch(source.id, { auth: { ...source.auth, value: event.target.value } })} /></label></>}{source.auth.type === "bearer" && <label>Token<input type="password" value={source.auth.value ?? ""} onChange={(event) => onPatch(source.id, { auth: { ...source.auth, value: event.target.value } })} /></label>}{source.auth.type === "basic" && <><label>Benutzername<input value={source.auth.username ?? ""} onChange={(event) => onPatch(source.id, { auth: { ...source.auth, username: event.target.value } })} /></label><label>Passwort<input type="password" value={source.auth.password ?? ""} onChange={(event) => onPatch(source.id, { auth: { ...source.auth, password: event.target.value } })} /></label></>}<label>Intervall (Sek.)<input type="number" min="10" value={source.refreshSeconds ?? ""} onChange={(event) => onPatch(source.id, { refreshSeconds: event.target.value ? Number(event.target.value) : undefined })} /></label></div>
-          <button className="button primary run-request" disabled={busyId === source.id || !source.url} onClick={test}>{busyId === source.id ? "Request läuft …" : `▶ ${source.method} Request ausführen`}</button>
-        </section>
-        {diagnostic ? <>
-          <section className={`diagnostic-summary ${diagnostic.ok ? "success" : "failure"}`}><div className="diagnostic-icon">{diagnostic.ok ? "✓" : "!"}</div><div><span>{diagnostic.ok ? "Request erfolgreich" : diagnostic.error?.title ?? "Request fehlgeschlagen"}</span><strong>{diagnostic.response ? `${diagnostic.response.status} ${diagnostic.response.statusText}` : diagnostic.error?.code}</strong><p>{diagnostic.error?.detail ?? "Die API hat eine erfolgreiche Antwort geliefert."}</p>{diagnostic.error?.hint && <em>Hinweis: {diagnostic.error.hint}</em>}</div><dl><div><dt>Dauer</dt><dd>{diagnostic.durationMs} ms</dd></div><div><dt>Zeitpunkt</dt><dd>{new Date(diagnostic.startedAt).toLocaleTimeString("de-DE")}</dd></div><div><dt>Größe</dt><dd>{diagnostic.response ? `${diagnostic.response.sizeBytes.toLocaleString("de-DE")} B` : "—"}</dd></div></dl></section>
-          <section className="exchange-grid">
-            <article className="api-card exchange"><div className="api-card-title"><div><h2>Vollständiger Request</h2><p>Vom Diagnose-Server tatsächlich gesendet</p></div><label className="secret-toggle"><input type="checkbox" checked={revealSecrets} onChange={(event) => setRevealSecrets(event.target.checked)} /> Secrets zeigen</label></div><div className="exchange-meta"><span className={`method method-${diagnostic.request.method.toLowerCase()}`}>{diagnostic.request.method}</span><code>{diagnostic.request.url}</code></div><h3>Header</h3><pre>{headerText(redact(diagnostic.request.headers, revealSecrets))}</pre><h3>Body</h3><pre>{pretty(diagnostic.request.body ?? "")}</pre></article>
-            <article className="api-card exchange"><div className="api-card-title"><div><h2>Vollständige Response</h2><p>{diagnostic.response?.redirected ? `Redirect-Ziel: ${diagnostic.response.url}` : "Ungekürzte Antwort bis 1 MB"}</p></div>{diagnostic.response && <span className={`status-chip ${diagnostic.ok ? "ok" : "error"}`}>{diagnostic.response.status}</span>}</div>{diagnostic.response ? <><div className="exchange-meta"><code>{diagnostic.response.contentType || "Content-Type unbekannt"}</code></div><h3>Header</h3><pre>{headerText(diagnostic.response.headers)}</pre><h3>Body {diagnostic.response.bodyTruncated && <small>bei 1 MB gekürzt</small>}</h3><pre>{pretty(diagnostic.response.body, diagnostic.response.contentType)}</pre></> : <p className="empty-state">Keine HTTP-Response empfangen. Der Fehler trat vor der Antwort auf.</p>}</article>
-          </section>
-          <section className="api-card codex-card"><div className="api-card-title"><div><h2>Codex-Kontext</h2><p>Fertiger technischer Kontext zum Kopieren – Secrets bleiben maskiert.</p></div><button className="button ghost" onClick={() => navigator.clipboard.writeText(`Analysiere diesen API-Request und erkläre Ursache und Fix.\n\n${JSON.stringify({ ...diagnostic, request: { ...diagnostic.request, headers: redact(diagnostic.request.headers, false) } }, null, 2)}`)}>Für Codex kopieren</button></div></section>
-          {leaves.length > 0 && <section className="api-card fields-card"><div className="api-card-title"><div><h2>JSON-Felder zuordnen</h2><p>{leaves.length} Werte erkannt. Ein Feld dem ausgewählten Widget zuweisen oder ein neues Widget erstellen.</p></div><input placeholder="Response durchsuchen" value={fieldSearch} onChange={(event)=>setFieldSearch(event.target.value)}/></div><div className="field-table">{leaves.map((leaf) => <div key={leaf.path}><code>{leaf.path || "$"}</code><span>{typeof leaf.value} · {typeof leaf.value === "string" ? leaf.value : JSON.stringify(leaf.value)}</span><button onClick={() => onMap(source, leaf)}>Zuweisen</button><button onClick={() => onMap(source, leaf, true)}>+ Widget</button></div>)}</div></section>}
-        </> : <section className="api-empty"><span>↗</span><h2>Bereit für den ersten echten Request</h2><p>Führe den Test aus. Danach erscheinen hier Netzwerkdiagnose, Request, Response und alle JSON-Felder.</p></section>}
-      </main> : <main className="api-empty"><span>+</span><h2>Neue Datenquelle anlegen</h2><p>APIs bekommen hier den Platz, den sie für eine saubere Diagnose brauchen.</p><button className="button primary" onClick={() => setSelectedId(onAdd())}>Datenquelle erstellen</button></main>}
-    </div>
+  const insertSecret = (token: string) => {
+    if (!source) return;
+    if (requestTab === "body") onPatch(source.id, { body: `${source.body ?? ""}${source.body ? "\n" : ""}${token}` });
+    else if (requestTab === "auth") onPatch(source.id, { auth: { ...source.auth, value: token } });
+    else if (requestTab === "headers") {
+      const key = source.headers.Authorization ? `X-Secret-${Object.keys(source.headers).length + 1}` : "Authorization";
+      onPatch(source.id, { headers: { ...source.headers, [key]: token } });
+    } else if (requestTab === "params") onPatch(source.id, { query: { ...source.query, secret: token } });
+    else onPatch(source.id, { variables: { ...source.variables, SECRET: token } });
+  };
+
+  return <section className="api-studio">
+    <aside className="api-sources">
+      <header><div><small>Workspace</small><h2>API Studio</h2></div><button className="icon-button" title="Datenquelle hinzufügen" aria-label="Datenquelle hinzufügen" onClick={() => setSelectedId(onAdd())}><Icon name="plus"/></button></header>
+      <div className="api-source-scroll">
+        <div className="source-section-title"><span>Datenquellen</span><i>{sources.length}</i></div>
+        {sources.map((item) => <button className={item.id === source?.id ? "active" : ""} key={item.id} onClick={() => setSelectedId(item.id)}>
+          <span className={`method-badge method-${item.method.toLowerCase()}`}>{item.method}</span>
+          <span><strong>{item.name}</strong><small>{item.url || "Keine URL"}</small></span>
+          {diagnostics[item.id] && <i className={diagnostics[item.id].ok ? "status-ok" : "status-error"}/>}
+        </button>)}
+        {sources.length === 0 && <div className="panel-empty"><Icon name="data"/><strong>Keine Datenquellen</strong><p>Erstelle einen Request, um eine API zu verbinden.</p></div>}
+      </div>
+      <footer><button className="secondary-button full" onClick={onClose}>Zurück zum Dashboard</button></footer>
+    </aside>
+
+    {source ? <main className="api-workspace">
+      <header className="api-workspace-header">
+        <div className="source-title"><input aria-label="Name der Datenquelle" value={source.name} onChange={(event) => onPatch(source.id, { name: event.target.value })}/><span>{diagnostic ? `Zuletzt getestet · ${new Date(diagnostic.startedAt).toLocaleTimeString("de-DE")}` : "Noch nicht getestet"}</span></div>
+        <div><label className="interval-control">Intervall<input type="number" min="10" value={source.refreshSeconds ?? ""} onChange={(event) => onPatch(source.id, { refreshSeconds: event.target.value ? Number(event.target.value) : undefined })}/><span>s</span></label><button className="secondary-button" onClick={() => setSecretsOpen(true)}><Icon name="secrets"/> Secrets</button><button className="icon-button subtle-danger" aria-label="Datenquelle entfernen" title="Datenquelle entfernen" onClick={() => { if (confirm(`Datenquelle „${source.name}“ entfernen?`)) onRemove(source.id); }}><Icon name="trash"/></button></div>
+      </header>
+      <section className="request-builder">
+        <div className="request-bar">
+          <select className={`method-select method-${source.method.toLowerCase()}`} aria-label="HTTP-Methode" value={source.method} onChange={(event) => onPatch(source.id, { method: event.target.value as DataSource["method"] })}>{methods.map((method) => <option key={method}>{method}</option>)}</select>
+          <input className="request-url" aria-label="Request URL" placeholder="https://api.example.com/data" value={source.url} onChange={(event) => onPatch(source.id, { url: event.target.value })} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") void test(); }}/>
+          <button className="primary-button send-button" disabled={busyId === source.id || !source.url} onClick={() => void test()}><Icon name="send"/>{busyId === source.id ? "Senden …" : "Senden"}</button>
+        </div>
+        <nav className="request-tabs">{([["params", "Params", Object.keys(source.query ?? {}).length], ["headers", "Headers", Object.keys(source.headers).length], ["auth", "Auth", source.auth.type === "none" ? 0 : 1], ["body", "Body", source.body ? 1 : 0], ["variables", "Variables", Object.keys(source.variables ?? {}).length]] as const).map(([id, label, count]) => <button className={requestTab === id ? "active" : ""} key={id} onClick={() => setRequestTab(id)}>{label}{count > 0 && <span>{count}</span>}</button>)}</nav>
+        <div className="request-tab-content">
+          {requestTab === "params" && <><div className="tab-intro"><div><h3>Query-Parameter</h3><p>Werden sicher an die Request-URL angehängt.</p></div></div><KeyValueEditor value={source.query ?? {}} keyPlaceholder="limit" valuePlaceholder="10" onChange={(query) => onPatch(source.id, { query })}/></>}
+          {requestTab === "headers" && <><div className="tab-intro"><div><h3>Request Headers</h3><p>Secret-Referenzen bleiben serverseitig geschützt.</p></div><button className="text-action" onClick={() => setSecretsOpen(true)}><Icon name="secrets"/> Secret einfügen</button></div><KeyValueEditor value={source.headers} keyPlaceholder="Accept" valuePlaceholder="application/json" onChange={(headers) => onPatch(source.id, { headers })}/></>}
+          {requestTab === "auth" && <AuthEditor source={source} onPatch={(auth) => onPatch(source.id, { auth })} onSecrets={() => setSecretsOpen(true)}/>}
+          {requestTab === "body" && <><div className="tab-intro"><div><h3>Request Body</h3><p>{source.method === "GET" ? "GET Requests senden keinen Body." : "JSON, Text oder Variablen- und Secret-Referenzen."}</p></div><button className="text-action" onClick={() => setSecretsOpen(true)}><Icon name="secrets"/> Secret einfügen</button></div><textarea className="body-editor" spellCheck={false} disabled={source.method === "GET"} placeholder={source.method === "GET" ? "Für GET deaktiviert" : '{\n  \"key\": \"{{var.VALUE}}\"\n}'} value={source.body ?? ""} onChange={(event) => onPatch(source.id, { body: event.target.value })}/></>}
+          {requestTab === "variables" && <><div className="tab-intro"><div><h3>Variablen</h3><p>Im Request als <code>{"{{var.NAME}}"}</code> verwenden.</p></div></div><KeyValueEditor value={source.variables ?? {}} keyPlaceholder="TENANT" valuePlaceholder="demo" onChange={(variables) => onPatch(source.id, { variables })}/></>}
+        </div>
+      </section>
+      <ResponseViewer source={source} diagnostic={diagnostic} onMap={onMap}/>
+    </main> : <main className="api-workspace-empty"><div><Icon name="data"/><h2>Ersten Request erstellen</h2><p>Lege eine Datenquelle an und teste sie direkt in der Workbench.</p><button className="primary-button" onClick={() => setSelectedId(onAdd())}><Icon name="plus"/> Datenquelle erstellen</button></div></main>}
+    <SecretManager open={secretsOpen} onClose={() => setSecretsOpen(false)} onInsert={insertSecret}/>
   </section>;
+}
+
+function AuthEditor({ source, onPatch, onSecrets }: { source: DataSource; onPatch: (auth: DataSource["auth"]) => void; onSecrets: () => void }) {
+  return <div className="auth-editor">
+    <div className="tab-intro"><div><h3>Authentifizierung</h3><p>Zugangsdaten können direkt oder über den Secret Store referenziert werden.</p></div><button className="text-action" onClick={onSecrets}><Icon name="secrets"/> Secret verwenden</button></div>
+    <span className="auth-types">{([["none", "Keine"], ["apiKey", "API Key"], ["bearer", "Bearer"], ["basic", "Basic"]] as const).map(([id, label]) => <button className={source.auth.type === id ? "active" : ""} key={id} onClick={() => onPatch({ type: id })}>{label}</button>)}</span>
+    {source.auth.type === "none" && <div className="section-empty">Für diesen Request wird keine Authentifizierung gesendet.</div>}
+    {source.auth.type === "apiKey" && <div className="control-pair"><label>Header-Name<input value={source.auth.name ?? "X-API-Key"} onChange={(event) => onPatch({ ...source.auth, name: event.target.value })}/></label><label>API Key<input type="password" value={source.auth.value ?? ""} onChange={(event) => onPatch({ ...source.auth, value: event.target.value })}/></label></div>}
+    {source.auth.type === "bearer" && <label>Bearer Token<input type="password" value={source.auth.value ?? ""} onChange={(event) => onPatch({ ...source.auth, value: event.target.value })}/></label>}
+    {source.auth.type === "basic" && <div className="control-pair"><label>Benutzername<input value={source.auth.username ?? ""} onChange={(event) => onPatch({ ...source.auth, username: event.target.value })}/></label><label>Passwort<input type="password" value={source.auth.password ?? ""} onChange={(event) => onPatch({ ...source.auth, password: event.target.value })}/></label></div>}
+  </div>;
 }
