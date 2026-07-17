@@ -199,7 +199,7 @@ export default function Builder() {
     setBusy(true); setNotice(null);
     try {
       const response = await fetch(`/api/dashboards/${dashboardId}/pairings`, { method: "POST" });
-      const result = await response.json() as { code?: string; qrToken?: string; expiresAt?: string; displayUrl?: string; error?: { message?: string } };
+      const result = await response.json() as { code?: string; qrToken?: string; expiresAt?: string; displayUrl?: string; playerUrl?: string; error?: { message?: string } };
       if (!response.ok || !result.code || !result.qrToken || !result.expiresAt || !result.displayUrl) throw new Error(result.error?.message ?? "Pairing fehlgeschlagen");
       // QR scanners trust normal HTTPS links. The public handoff page then opens
       // the installed app with the same short-lived pairing secret.
@@ -211,7 +211,7 @@ export default function Builder() {
         color: { dark: "#090b12", light: "#ffffff" },
       });
       setPairingCode(result.code);
-      setPairingQr({ dataUrl, launchUrl: pairingPage.toString(), expiresAt: result.expiresAt });
+      setPairingQr({ dataUrl, launchUrl: pairingPage.toString(), expiresAt: result.expiresAt, playerUrl: result.playerUrl });
       setNotice({ kind: "ok", text: "QR-Code erstellt. Er ist einmalig und 10 Minuten gültig." });
     } catch (error) {
       setPairingQr(null);

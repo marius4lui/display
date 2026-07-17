@@ -376,6 +376,7 @@ svg { width: 18px; height: 18px; }
 .pairing-code { display: grid; padding: 13px; border: 1px dashed #5d4aa3; border-radius: 8px; background: #181428; text-align: center; }
 .pairing-code small { color: var(--muted); font-size: 9px; }
 .pairing-code strong { margin-top: 3px; color: #c6bcff; font: 700 23px "Space Grotesk"; letter-spacing: .15em; }
+.pairing-code a { margin-top: 8px; color: #b9adff; font-size: 10px; letter-spacing: normal; }
 .pairing-qr { display: grid; justify-items: center; gap: 8px; padding: 12px; border: 1px solid #494068; border-radius: 10px; background: linear-gradient(145deg, #171b28, #201a35); text-align: center; }
 .pairing-qr img { display: block; width: min(100%, 220px); height: auto; padding: 7px; border-radius: 9px; background: white; }
 .pairing-qr strong { font: 600 11px "Space Grotesk"; }
@@ -514,6 +515,8 @@ svg { width: 18px; height: 18px; }
 }
 .canvas-widget.selected { outline: 1.5px solid #9e8dff; outline-offset: 2px; }
 .widget-value { min-height: 0; overflow: hidden; font: 600 clamp(14px, 2.7vw, 45px) "Space Grotesk"; line-height: 1.05; white-space: pre-wrap; }
+.widget-weather { display: flex; align-items: flex-end; gap: clamp(5px, 1vw, 14px); }
+.widget-weather i { color: currentColor; font-size: 1.05em; font-style: normal; }
 .widget-value img, .canvas-widget > img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
 .resize-handle {
   position: absolute;
@@ -545,6 +548,30 @@ svg { width: 18px; height: 18px; }
 .page-navigation button { align-self: stretch; min-width: 32%; border: 0; background: transparent; color: inherit; cursor: pointer; }
 .page-navigation button:hover { background: #ffffff12; }
 .page-navigation span { opacity: .7; font-size: clamp(7px, .7vw, 11px); }
+.canvas-widget.is-stale { filter: saturate(.72); }
+.canvas-widget.has-error { outline: 1px solid #ff829655; }
+.widget-state { position: absolute; right: 8px; bottom: 6px; color: #ffd08a; font-size: clamp(7px, .65vw, 10px); opacity: .85; }
+
+.player-pair { display: grid; min-height: 100dvh; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 0, #242042, #090b12 55%); color: #f6f7fb; }
+.player-card { display: grid; width: min(420px, 100%); gap: 18px; padding: 32px; border: 1px solid #34394b; border-radius: 18px; background: #111520; box-shadow: 0 30px 80px #0008; }
+.player-card h1, .player-card p { margin: 0; }
+.player-card p { color: #aeb3c2; line-height: 1.55; }
+.player-card label { color: #cdd1dd; font-size: 12px; }
+.player-code { width: 100%; border: 1px solid #4a5065; border-radius: 12px; padding: 15px; background: #090b12; color: white; text-align: center; font: 700 30px "Space Grotesk", sans-serif; letter-spacing: .28em; }
+.player-code:focus { border-color: #8e7cff; outline: 3px solid #7c5cff30; }
+.player-error { color: #ff9bad !important; font-size: 13px; }
+.player-spinner { width: 30px; height: 30px; margin: auto; border: 3px solid #ffffff20; border-top-color: #8e7cff; border-radius: 50%; animation: spin .8s linear infinite; }
+.web-player { position: fixed; inset: 0; display: grid; overflow: hidden; place-items: center; background: #05070b; }
+.player-artboard { width: min(100vw, calc(100vh * 16 / 9)); height: min(100vh, calc(100vw * 9 / 16)); overflow: hidden; }
+.player-artboard > .display-grid { width: 100%; height: 100%; }
+.player-menu-hotspot { position: fixed; z-index: 30; top: 0; right: 0; width: 64px; height: 64px; border: 0; background: transparent; opacity: 0; cursor: pointer; }
+.player-status, .player-notice { position: fixed; z-index: 35; right: 18px; bottom: 18px; padding: 9px 13px; border: 1px solid #ffffff20; border-radius: 999px; background: #161b28dd; color: #ffd08a; font-size: 12px; backdrop-filter: blur(10px); }
+.player-notice { right: 50%; bottom: 26px; translate: 50% 0; color: white; }
+.player-menu-backdrop { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; background: #0009; backdrop-filter: blur(5px); }
+.player-menu { display: grid; width: min(340px, calc(100% - 40px)); gap: 12px; padding: 24px; border: 1px solid #3d4355; border-radius: 16px; background: #131824; color: white; box-shadow: 0 24px 70px #000a; }
+.player-menu button { min-height: 44px; border-radius: 9px; border: 1px solid #4a5065; background: #202638; color: white; cursor: pointer; }
+.player-menu small { color: #8f96a8; line-height: 1.45; }
+@keyframes spin { to { rotate: 360deg; } }
 .preview-mode .artboard-frame { width: auto; max-width: 100%; border: 7px solid #202430; border-radius: 14px; padding: 5px; transition: aspect-ratio 160ms; }
 .preview-mode .device-display { height: min(100%, 52vw, 650px); }
 .preview-mode .device-desktop { height: min(100%, 55vw, 650px); }

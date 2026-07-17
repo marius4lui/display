@@ -13,6 +13,7 @@ services:
       # Public canonical origin used in dashboard, asset, and QR-pairing URLs.
       # Local .env files can override this with http://localhost:3000.
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://kmuc.app}
+      PUBLIC_DISPLAY_URL: ${PUBLIC_DISPLAY_URL:-https://dis.bz3.eu}
       SECRET_STORE_MASTER_KEY: ${SECRET_STORE_MASTER_KEY}
       COLLECTOR_TOKEN: ${COLLECTOR_TOKEN}
     ports:
