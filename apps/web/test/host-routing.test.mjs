@@ -189,6 +189,10 @@ test("Erfolgreiches Pairing setzt nur das hostgebundene HttpOnly-Token", async (
   assert.match(data.body, /"state":"42"/);
   assert.deepEqual(upstreamRequest, { method: "GET", authorization: "Bearer super-secret-token", marker: "server-side" });
 
+  const outdated = await request("/api/player/data/home-assistant", `display.localhost:${port}`, "POST", undefined, { Cookie: cookieHeader, "X-Player-Config-Version": "999" });
+  assert.equal(outdated.status, 409);
+  assert.match(outdated.body, /CONFIG_CHANGED/);
+
   const unknownSource = await request("/api/player/data/not-published", `display.localhost:${port}`, "POST", undefined, { Cookie: cookieHeader });
   assert.equal(unknownSource.status, 404);
 

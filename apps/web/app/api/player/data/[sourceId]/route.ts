@@ -17,6 +17,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { data: display } = await database.from("displays").select("id, owner_id, active_version").eq("id", device.display_id).maybeSingle();
   if (!display?.active_version) return apiError("NOT_PUBLISHED", "Kein veröffentlichtes Dashboard", 404);
+  const requestedVersion = Number(request.headers.get("x-player-config-version"));
+  if (Number.isFinite(requestedVersion) && requestedVersion > 0 && requestedVersion !== display.active_version) {
+    return apiError("CONFIG_CHANGED", "Eine neue Dashboard-Version ist verfügbar", 409);
+  }
   const { data: version } = await database.from("display_versions").select("document").eq("display_id", display.id).eq("version", display.active_version).maybeSingle();
   const document = version?.document as DashboardDocument | undefined;
   const source = document?.dataSources?.find((candidate: DataSource) => candidate.id === sourceId);

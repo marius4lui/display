@@ -69,6 +69,7 @@ export default function PlayerApp() {
   const [startupError, setStartupError] = useState("");
   const [syncError, setSyncError] = useState("");
   const [config, setConfig] = useState<PlayerConfig | null>(null);
+  const [configEpoch, setConfigEpoch] = useState(0);
   const configRef = useRef<PlayerConfig | null>(null);
   const [runtime, setRuntime] = useState<Record<string, RuntimeState>>({});
   const runtimeRef = useRef<Record<string, RuntimeState>>({});
@@ -78,6 +79,7 @@ export default function PlayerApp() {
   const [notice, setNotice] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const etag = useRef("");
+  const configLoading = useRef(false);
   const lastSync = useRef<string | null>(null);
   const lastData = useRef<string | null>(null);
   const lastError = useRef<string | null>(null);
@@ -100,6 +102,8 @@ export default function PlayerApp() {
   }, []);
 
   const loadConfig = useCallback(async (initial = false) => {
+    if (configLoading.current) return;
+    configLoading.current = true;
     try {
       const response = await fetch("/api/player/config", { headers: etag.current ? { "If-None-Match": etag.current } : {} });
       if (response.status === 401) {
@@ -111,9 +115,16 @@ export default function PlayerApp() {
       if (!response.ok) throw new Error((await response.json()).error?.message ?? "Konfiguration konnte nicht geladen werden");
       const next = await response.json() as PlayerConfig;
       etag.current = response.headers.get("etag") ?? "";
-      configRef.current = next; setConfig(next); setPaired(true); setOffline(false); setStartupError(""); setSyncError(""); setPage((value) => Math.min(value, next.document.pages.length - 1));
+      const sourceIds = new Set(next.document.dataSources.map((source) => source.id));
+      const retainedRuntime = Object.fromEntries(Object.entries(runtimeRef.current).filter(([sourceId]) => sourceIds.has(sourceId)));
+      runtimeRef.current = retainedRuntime;
+      setRuntime(retainedRuntime);
+      configRef.current = next;
+      setConfig(next);
+      setConfigEpoch((epoch) => epoch + 1);
+      setPaired(true); setOffline(false); setStartupError(""); setSyncError(""); setPage((value) => Math.max(0, Math.min(value, next.document.pages.length - 1)));
       lastSync.current = new Date().toISOString();
-      await writeCache(next, runtimeRef.current);
+      await writeCache(next, retainedRuntime);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Konfigurationsfehler";
       const disconnected = !navigator.onLine || error instanceof TypeError;
@@ -127,15 +138,21 @@ export default function PlayerApp() {
         }
         else setStartupError(message);
       }
-    }
+    } finally { configLoading.current = false; }
   }, [markRuntimeStale]);
 
   useEffect(() => { setOffline(!navigator.onLine); void loadConfig(true); }, [loadConfig]);
   useEffect(() => {
     const online = () => { setOffline(false); void loadConfig(); };
     const offlineHandler = () => { setOffline(true); markRuntimeStale(); };
+    const focused = () => void loadConfig();
+    const visible = () => { if (document.visibilityState === "visible") void loadConfig(); };
     window.addEventListener("online", online); window.addEventListener("offline", offlineHandler);
-    return () => { window.removeEventListener("online", online); window.removeEventListener("offline", offlineHandler); };
+    window.addEventListener("focus", focused); document.addEventListener("visibilitychange", visible);
+    return () => {
+      window.removeEventListener("online", online); window.removeEventListener("offline", offlineHandler);
+      window.removeEventListener("focus", focused); document.removeEventListener("visibilitychange", visible);
+    };
   }, [loadConfig, markRuntimeStale]);
   useEffect(() => {
     const key = (event: KeyboardEvent) => { if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "m") setMenu((open) => !open); };
@@ -164,8 +181,9 @@ export default function PlayerApp() {
       const controller = new AbortController(); controllers.add(controller);
       const timeout = window.setTimeout(() => controller.abort(), 20_000);
       try {
-        const response = await fetch(`/api/player/data/${encodeURIComponent(source.id)}`, { method: "POST", signal: controller.signal, cache: "no-store" });
+        const response = await fetch(`/api/player/data/${encodeURIComponent(source.id)}`, { method: "POST", signal: controller.signal, cache: "no-store", headers: { "X-Player-Config-Version": String(config.version) } });
         const result = await response.json() as { value?: unknown; checkedAt?: string; error?: { message?: string } };
+        if (response.status === 409) void loadConfig();
         if (!response.ok) throw new Error(result.error?.message ?? `Datenquelle antwortet mit HTTP ${response.status}.`);
         const value = result.value;
         const previous = runtimeRef.current[source.id];
@@ -183,7 +201,7 @@ export default function PlayerApp() {
       return window.setInterval(() => void run(source), Math.max(10, source.refreshSeconds ?? config.document.settings.dataPollSeconds) * 1000);
     });
     return () => { timers.forEach(clearInterval); controllers.forEach((controller) => controller.abort()); };
-  }, [config?.version, offline, updateRuntime]);
+  }, [configEpoch, offline, loadConfig, updateRuntime]);
 
   useEffect(() => {
     if (!paired) return;
@@ -224,7 +242,7 @@ export default function PlayerApp() {
   if (!paired || !config) return <main className="player-pair"><form className="player-card" onSubmit={pair}><div className="brand"><span className="brand-mark">d</span><div><strong>display</strong><small>Web Player</small></div></div><h1>Display verbinden</h1><p>Gib den sechsstelligen Code aus der Geräteverwaltung im Studio ein.</p><label htmlFor="pair-code">Kopplungscode</label><input id="pair-code" className="player-code" inputMode="numeric" autoComplete="one-time-code" autoFocus maxLength={6} pattern="[0-9]{6}" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" />{pairError && <p className="player-error" role="alert">{pairError}</p>}<button className="primary-button full" disabled={code.length !== 6}>Verbinden</button></form></main>;
 
   return <main className="web-player">
-    <div className="player-artboard"><DashboardRenderer document={config.document} pageIndex={page} runtime={runtime} onPageChange={setPage} /></div>
+    <div className="player-artboard"><DashboardRenderer key={`${config.id}:${config.version}:${configEpoch}`} document={config.document} pageIndex={page} runtime={runtime} onPageChange={setPage} /></div>
     <button className="player-menu-hotspot" aria-label="Player-Menü öffnen" onClick={() => setMenu(true)} />
     {!isFullscreen && <button className="player-fullscreen-button" onClick={() => void fullscreen()}>Vollbild aktivieren</button>}
     {(offline || syncError || Object.values(runtime).some((state) => state.stale)) && <div className="player-status">{offline ? "Offline · letzter Stand" : syncError ? `Synchronisation: ${syncError}` : "Daten teilweise veraltet"}</div>}
