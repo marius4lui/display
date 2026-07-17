@@ -19,6 +19,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -106,8 +107,21 @@ class MainActivity : ComponentActivity() {
 
     private fun handleConnectionIntent(intent: Intent?) {
         val uri = intent?.data ?: return
-        if (uri.scheme != "display" || uri.host != "paired") return
-        controller.acceptBrowserConnection(uri.getQueryParameter("state").orEmpty(), uri.getQueryParameter("url").orEmpty(), uri.getQueryParameter("token").orEmpty(), lifecycleScope)
+        if (uri.scheme != "display") return
+        when (uri.host) {
+            "paired" -> controller.acceptBrowserConnection(
+                uri.getQueryParameter("state").orEmpty(),
+                uri.getQueryParameter("url").orEmpty(),
+                uri.getQueryParameter("token").orEmpty(),
+                lifecycleScope,
+            )
+            "pair" -> controller.connectWithQrToken(
+                uri.getQueryParameter("url").orEmpty(),
+                uri.getQueryParameter("token").orEmpty(),
+                lifecycleScope,
+            )
+            else -> return
+        }
         intent.data = null
     }
 
@@ -184,42 +198,137 @@ private fun DashboardScreen(controller: DashboardController) {
     var dragDistance by remember { mutableStateOf(0f) }
     val switchPage: (Int) -> Unit = { direction -> pageIndex = (pageIndex + direction + dashboard.pages.size) % dashboard.pages.size }
     val page = dashboard.pages[pageIndex.coerceIn(0, dashboard.pages.lastIndex)]
-    Box(Modifier.fillMaxSize().background(parseColor(dashboard.settings.background)).padding(12.dp).pointerInput(dashboard.pages.size) {
-        detectHorizontalDragGestures(
-            onDragStart = { dragDistance = 0f },
-            onHorizontalDrag = { change, amount -> change.consume(); dragDistance += amount },
-            onDragEnd = { if (kotlin.math.abs(dragDistance) > 80f) switchPage(if (dragDistance < 0) 1 else -1); dragDistance = 0f },
-            onDragCancel = { dragDistance = 0f },
-        )
-    }) {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val cellWidth = maxWidth / dashboard.settings.columns
-            val cellHeight = maxHeight / dashboard.settings.rows
-            page.widgets.forEach { widget ->
-                val width = cellWidth * widget.width.coerceAtMost(dashboard.settings.columns - widget.x)
-                val height = cellHeight * widget.height.coerceAtMost(dashboard.settings.rows - widget.y)
-                DashboardWidgetView(widget, controller.values[widget.dataSourceId], Modifier.offset(cellWidth * widget.x, cellHeight * widget.y).size(width - 6.dp, height - 6.dp))
-            }
-            if (dashboard.pages.size > 1 && dashboard.pageNavigation.visible) {
-                val navigation = dashboard.pageNavigation
-                val width = cellWidth * navigation.width.coerceAtMost(dashboard.settings.columns - navigation.x)
-                val height = cellHeight * navigation.height.coerceAtMost(dashboard.settings.rows - navigation.y)
-                Row(Modifier.offset(cellWidth * navigation.x, cellHeight * navigation.y).size(width - 6.dp, height - 6.dp).clip(RoundedCornerShape(14.dp)).background(parseColor(navigation.style.background)), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    TextButton(onClick = { switchPage(-1) }, modifier = Modifier.weight(1f).fillMaxSize()) { Text("←", color = parseColor(navigation.style.foreground), fontSize = 26.sp) }
-                    Text("${pageIndex + 1} / ${dashboard.pages.size}", color = parseColor(navigation.style.foreground).copy(alpha = .7f), fontSize = 11.sp)
-                    TextButton(onClick = { switchPage(1) }, modifier = Modifier.weight(1f).fillMaxSize()) { Text("→", color = parseColor(navigation.style.foreground), fontSize = 26.sp) }
+    BoxWithConstraints(
+        Modifier.fillMaxSize().background(parseColor(dashboard.settings.background)).safeDrawingPadding()
+    ) {
+        // Scale the whole dashboard from its available dp size. Fixed dp/sp values become
+        // disproportionately large on high-density phones and small landscape displays.
+        val uiScale = minOf(maxWidth / 960.dp, maxHeight / 540.dp).coerceIn(.4f, 1.6f)
+        val outerPadding = (12f * uiScale).coerceAtLeast(4f).dp
+        val gap = (6f * uiScale).coerceIn(2f, 8f).dp
+        Column(Modifier.fillMaxSize()) {
+            BoxWithConstraints(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(start = outerPadding, top = outerPadding, end = outerPadding)
+                    .pointerInput(dashboard.pages.size) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { dragDistance = 0f },
+                            onHorizontalDrag = { change, amount -> change.consume(); dragDistance += amount },
+                            onDragEnd = {
+                                if (kotlin.math.abs(dragDistance) > 80f) switchPage(if (dragDistance < 0) 1 else -1)
+                                dragDistance = 0f
+                            },
+                            onDragCancel = { dragDistance = 0f },
+                        )
+                    }
+            ) {
+                val columns = dashboard.settings.columns.coerceAtLeast(1)
+                val rows = dashboard.settings.rows.coerceAtLeast(1)
+                val cellWidth = maxWidth / columns
+                val cellHeight = maxHeight / rows
+                page.widgets.forEach { widget ->
+                    val x = widget.x.coerceIn(0, columns - 1)
+                    val y = widget.y.coerceIn(0, rows - 1)
+                    val widgetColumns = widget.width.coerceIn(1, columns - x)
+                    val widgetRows = widget.height.coerceIn(1, rows - y)
+                    val width = (cellWidth * widgetColumns - gap).coerceAtLeast(1.dp)
+                    val height = (cellHeight * widgetRows - gap).coerceAtLeast(1.dp)
+                    DashboardWidgetView(
+                        widget,
+                        controller.values[widget.dataSourceId],
+                        uiScale,
+                        Modifier.offset(cellWidth * x, cellHeight * y).size(width, height),
+                    )
+                }
+                if (dashboard.pages.size > 1 && dashboard.pageNavigation.visible) {
+                    val navigation = dashboard.pageNavigation
+                    val x = navigation.x.coerceIn(0, columns - 1)
+                    val y = navigation.y.coerceIn(0, rows - 1)
+                    val navigationColumns = navigation.width.coerceIn(1, columns - x)
+                    val navigationRows = navigation.height.coerceIn(1, rows - y)
+                    val width = (cellWidth * navigationColumns - gap).coerceAtLeast(1.dp)
+                    val height = (cellHeight * navigationRows - gap).coerceAtLeast(1.dp)
+                    Row(
+                        Modifier
+                            .offset(cellWidth * x, cellHeight * y)
+                            .size(width, height)
+                            .clip(RoundedCornerShape((14f * uiScale).coerceAtLeast(5f).dp))
+                            .background(parseColor(navigation.style.background)),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Box(
+                            Modifier.weight(1f).fillMaxSize().clickable { switchPage(-1) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "←",
+                                color = parseColor(navigation.style.foreground),
+                                fontSize = (26f * uiScale).coerceAtLeast(12f).sp,
+                            )
+                        }
+                        Text(
+                            "${pageIndex + 1} / ${dashboard.pages.size}",
+                            color = parseColor(navigation.style.foreground).copy(alpha = .7f),
+                            fontSize = (11f * uiScale).coerceAtLeast(7f).sp,
+                            maxLines = 1,
+                        )
+                        Box(
+                            Modifier.weight(1f).fillMaxSize().clickable { switchPage(1) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "→",
+                                color = parseColor(navigation.style.foreground),
+                                fontSize = (26f * uiScale).coerceAtLeast(12f).sp,
+                            )
+                        }
+                    }
                 }
             }
-        }
-        Row(Modifier.align(Alignment.BottomEnd).clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha=.48f)).padding(horizontal=8.dp, vertical=4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(6.dp).clip(RoundedCornerShape(9.dp)).background(if (controller.status.startsWith("Live")) Color(0xFF62DE9A) else Color(0xFFFFB45F)))
-            Spacer(Modifier.width(6.dp)); Text(controller.status, fontSize=9.sp, color=Color.White.copy(alpha=.65f)); TextButton(onClick=controller::reset, contentPadding=androidx.compose.foundation.layout.PaddingValues(horizontal=8.dp, vertical=0.dp)) { Text("Setup", fontSize=9.sp) }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = outerPadding, vertical = (3f * uiScale).coerceAtLeast(2f).dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    Modifier
+                        .clip(RoundedCornerShape((8f * uiScale).coerceAtLeast(4f).dp))
+                        .background(Color.Black.copy(alpha = .48f))
+                        .padding(
+                            horizontal = (8f * uiScale).coerceAtLeast(4f).dp,
+                            vertical = (4f * uiScale).coerceAtLeast(2f).dp,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier
+                            .size((6f * uiScale).coerceAtLeast(4f).dp)
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(if (controller.status.startsWith("Live")) Color(0xFF62DE9A) else Color(0xFFFFB45F))
+                    )
+                    Spacer(Modifier.width((6f * uiScale).coerceAtLeast(3f).dp))
+                    Text(controller.status, fontSize = (9f * uiScale).coerceAtLeast(7f).sp, color = Color.White.copy(alpha = .65f), maxLines = 1)
+                    Spacer(Modifier.width((10f * uiScale).coerceAtLeast(5f).dp))
+                    Text(
+                        "Setup",
+                        Modifier.clickable(onClick = controller::reset).padding(vertical = 2.dp),
+                        fontSize = (9f * uiScale).coerceAtLeast(7f).sp,
+                        color = Color(0xFFC6B9FF),
+                        maxLines = 1,
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun DashboardWidgetView(widget: DashboardWidget, runtime: RuntimeValue?, modifier: Modifier) {
+private fun DashboardWidgetView(widget: DashboardWidget, runtime: RuntimeValue?, uiScale: Float, modifier: Modifier) {
     val raw = valueAtJsonPath(runtime?.value, widget.jsonPath)
     val rule = firstMatchingRule(raw, widget.conditionalRules)
     val background = rule?.optString("background")?.takeIf(String::isNotBlank) ?: widget.style.background
@@ -236,30 +345,34 @@ private fun DashboardWidgetView(widget: DashboardWidget, runtime: RuntimeValue?,
         widget.type == "status" -> widget.statusMap?.optJSONObject(raw.toString())?.let { "${it.optString("icon","●")} ${it.optString("text",raw.toString())}" } ?: raw?.toString().orEmpty()
         else -> rule?.optString("text")?.takeIf(String::isNotBlank) ?: widget.staticValue.orEmpty()
     }
-    Box(modifier.clip(RoundedCornerShape(16.dp)).background(parseColor(background)).alpha(animated).scale(scale).padding(18.dp)) {
-        if (widget.type == "image" && !widget.imageUrl.isNullOrBlank()) AsyncImage(widget.imageUrl, widget.title, Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
-        else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
-            Text(widget.title.uppercase(), color = parseColor(foreground).copy(alpha=.58f), fontSize=10.sp, fontWeight=FontWeight.Bold, letterSpacing=1.sp, maxLines=1, overflow=TextOverflow.Ellipsis)
-            when (widget.type) {
-                "clock" -> ClockText(parseColor(foreground), textAlign)
-                "weather" -> Row(verticalAlignment=Alignment.Bottom) { Text("☀", fontSize=38.sp, color=parseColor(accent)); Spacer(Modifier.width(12.dp)); Text(content, Modifier.weight(1f), color=parseColor(foreground), fontSize=42.sp, fontWeight=FontWeight.Bold, textAlign=textAlign, maxLines=2) }
-                "list" -> WidgetList(raw as? JSONArray, widget, parseColor(foreground))
-                "chart" -> WidgetChart(runtime?.history.orEmpty().map { valueAtJsonPath(it, widget.jsonPath) }, parseColor(accent))
-                "gauge" -> WidgetGauge(raw, widget, parseColor(accent), parseColor(foreground))
-                else -> Text(content, Modifier.fillMaxWidth(), color=parseColor(foreground), fontSize=if(widget.type=="text") 27.sp else 40.sp, fontWeight=FontWeight.SemiBold, textAlign=textAlign, maxLines=4, overflow=TextOverflow.Ellipsis)
+    BoxWithConstraints(modifier.clip(RoundedCornerShape((16f * uiScale).coerceAtLeast(5f).dp)).background(parseColor(background)).alpha(animated).scale(scale)) {
+        val widgetScale = minOf(uiScale, maxWidth / 260.dp, maxHeight / 115.dp).coerceIn(.35f, 1.6f)
+        val padding = (18f * widgetScale).coerceIn(4f, 24f).dp
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            if (widget.type == "image" && !widget.imageUrl.isNullOrBlank()) AsyncImage(widget.imageUrl, widget.title, Modifier.fillMaxSize().clip(RoundedCornerShape((12f * widgetScale).coerceAtLeast(4f).dp)), contentScale = ContentScale.Crop)
+            else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+                Text(widget.title.uppercase(), color = parseColor(foreground).copy(alpha=.58f), fontSize=(10f * widgetScale).coerceAtLeast(6f).sp, fontWeight=FontWeight.Bold, letterSpacing=(1f * widgetScale).coerceAtLeast(.25f).sp, maxLines=1, overflow=TextOverflow.Ellipsis)
+                when (widget.type) {
+                    "clock" -> ClockText(parseColor(foreground), textAlign, widgetScale)
+                    "weather" -> Row(verticalAlignment=Alignment.Bottom) { Text("☀", fontSize=(38f * widgetScale).coerceAtLeast(12f).sp, color=parseColor(accent)); Spacer(Modifier.width((12f * widgetScale).coerceAtLeast(3f).dp)); Text(content, Modifier.weight(1f), color=parseColor(foreground), fontSize=(42f * widgetScale).coerceAtLeast(12f).sp, fontWeight=FontWeight.Bold, textAlign=textAlign, maxLines=2, overflow=TextOverflow.Ellipsis) }
+                    "list" -> WidgetList(raw as? JSONArray, widget, parseColor(foreground), widgetScale)
+                    "chart" -> WidgetChart(runtime?.history.orEmpty().map { valueAtJsonPath(it, widget.jsonPath) }, parseColor(accent))
+                    "gauge" -> WidgetGauge(raw, widget, parseColor(accent), parseColor(foreground), widgetScale)
+                    else -> Text(content, Modifier.fillMaxWidth(), color=parseColor(foreground), fontSize=((if(widget.type=="text") 27f else 40f) * widgetScale).coerceAtLeast(11f).sp, fontWeight=FontWeight.SemiBold, textAlign=textAlign, maxLines=4, overflow=TextOverflow.Ellipsis)
+                }
+                if (runtime?.stale == true) Text("Zuletzt bekannter Wert", color=Color(0xFFFFB45F), fontSize=(9f * widgetScale).coerceAtLeast(6f).sp, maxLines=1, overflow=TextOverflow.Ellipsis)
             }
-            if (runtime?.stale == true) Text("Zuletzt bekannter Wert", color=Color(0xFFFFB45F), fontSize=9.sp)
         }
     }
 }
 
-@Composable private fun WidgetList(rows: JSONArray?, widget: DashboardWidget, color: Color) {
-    Column(verticalArrangement=Arrangement.spacedBy(5.dp)) {
+@Composable private fun WidgetList(rows: JSONArray?, widget: DashboardWidget, color: Color, uiScale: Float) {
+    Column(verticalArrangement=Arrangement.spacedBy((5f * uiScale).coerceAtLeast(1f).dp)) {
         for(index in 0 until minOf(rows?.length() ?: 0, widget.maxItems)) {
             val row=rows?.opt(index)
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
-                Text(valueAtJsonPath(row,widget.listTitlePath)?.toString().orEmpty(),color=color,fontSize=13.sp,maxLines=1)
-                Text(valueAtJsonPath(row,widget.listSubtitlePath)?.toString().orEmpty(),color=color.copy(alpha=.6f),fontSize=12.sp,maxLines=1)
+                Text(valueAtJsonPath(row,widget.listTitlePath)?.toString().orEmpty(),Modifier.weight(1f),color=color,fontSize=(13f*uiScale).coerceAtLeast(7f).sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                Text(valueAtJsonPath(row,widget.listSubtitlePath)?.toString().orEmpty(),color=color.copy(alpha=.6f),fontSize=(12f*uiScale).coerceAtLeast(7f).sp,maxLines=1,overflow=TextOverflow.Ellipsis)
             }
         }
     }
@@ -272,9 +385,10 @@ private fun DashboardWidgetView(widget: DashboardWidget, runtime: RuntimeValue?,
         for(index in 1 until values.size) drawLine(color, androidx.compose.ui.geometry.Offset((index-1)*size.width/(values.size-1),size.height-(values[index-1]-min)/range*size.height), androidx.compose.ui.geometry.Offset(index*size.width/(values.size-1),size.height-(values[index]-min)/range*size.height),strokeWidth=4f)
     }
 }
-@Composable private fun WidgetGauge(raw: Any?, widget: DashboardWidget, accent: Color, foreground: Color) {
+@Composable private fun WidgetGauge(raw: Any?, widget: DashboardWidget, accent: Color, foreground: Color, uiScale: Float) {
     val min=widget.min?:0.0;val max=widget.max?:100.0;val value=(raw as? Number)?.toDouble()?:min
-    Column { Text(formatRuntime(raw,widget.format,widget.suffix),color=foreground,fontSize=35.sp,fontWeight=FontWeight.Bold); Spacer(Modifier.height(8.dp)); Box(Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(9.dp)).background(Color.White.copy(alpha=.12f))){Box(Modifier.fillMaxWidth(((value-min)/(max-min)).toFloat().coerceIn(0f,1f)).height(12.dp).background(accent))} }
+    val barHeight=(12f*uiScale).coerceAtLeast(4f).dp
+    Column { Text(formatRuntime(raw,widget.format,widget.suffix),color=foreground,fontSize=(35f*uiScale).coerceAtLeast(11f).sp,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis); Spacer(Modifier.height((8f*uiScale).coerceAtLeast(2f).dp)); Box(Modifier.fillMaxWidth().height(barHeight).clip(RoundedCornerShape(9.dp)).background(Color.White.copy(alpha=.12f))){Box(Modifier.fillMaxWidth(((value-min)/(max-min)).toFloat().coerceIn(0f,1f)).height(barHeight).background(accent))} }
 }
 private fun firstMatchingRule(value: Any?, rules: JSONArray?): JSONObject? {
     if(rules==null)return null
@@ -283,10 +397,10 @@ private fun firstMatchingRule(value: Any?, rules: JSONArray?): JSONObject? {
 }
 
 @Composable
-private fun ClockText(color: Color, alignment: TextAlign) {
+private fun ClockText(color: Color, alignment: TextAlign, uiScale: Float) {
     var now by remember { mutableStateOf(Date()) }
     LaunchedEffect(Unit) { while(true) { now=Date(); delay(1_000) } }
-    Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(now), Modifier.fillMaxWidth(), color=color, fontSize=45.sp, fontWeight=FontWeight.Bold, textAlign=alignment)
+    Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(now), Modifier.fillMaxWidth(), color=color, fontSize=(45f*uiScale).coerceAtLeast(12f).sp, fontWeight=FontWeight.Bold, textAlign=alignment, maxLines=1, overflow=TextOverflow.Ellipsis)
 }
 
 private fun formatRuntime(value: Any?, format: String?, suffix: String?): String {

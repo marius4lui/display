@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
+import QRCode from "qrcode";
 import { blankDashboard, createWidget, effectiveWidget, formatValue, normalizeDashboard, placementIsFree, systemTemplates, type DashboardDocument, type DashboardPage, type DataSource, type LegacyDashboardDocument, type Widget, type WidgetType, valueAtPath } from "../lib/dashboard";
 import ApiWorkbench from "./ApiWorkbench";
 
@@ -8,6 +9,7 @@ const API = "";
 type Notice = { kind: "ok" | "error"; text: string } | null;
 type DashboardSummary = { id: string; name: string; activeVersion: number | null; updatedAt: string };
 type DeviceSummary = { id:string;name:string;online:boolean;last_seen_at?:string;app_version?:string;platform_version?:string;dashboard_version?:number;last_error?:string;revoked_at?:string };
+type PairingQr = { dataUrl: string; deepLink: string; expiresAt: string };
 
 function Clock() {
   const [now, setNow] = useState(new Date());
@@ -64,6 +66,7 @@ export default function Builder() {
   const [dashboardId, setDashboardId] = useState("");
   const [displayUrl, setDisplayUrl] = useState("");
   const [pairingCode, setPairingCode] = useState("");
+  const [pairingQr, setPairingQr] = useState<PairingQr | null>(null);
   const [dashboards, setDashboards] = useState<DashboardSummary[]>([]);
   const [devices,setDevices]=useState<DeviceSummary[]>([]);
   const [notice, setNotice] = useState<Notice>(null);
@@ -101,7 +104,23 @@ export default function Builder() {
       if (dashboardId && !result.dashboards.some((item) => item.id === dashboardId)) { setDashboardId(""); setDisplayUrl(""); localStorage.removeItem("display-project"); }
     });
   }, [dashboardId]);
-  useEffect(()=>{if(!dashboardId){setDevices([]);return}fetch(`/api/dashboards/${dashboardId}/pairings`).then((response)=>response.ok?response.json():{devices:[]}).then((result)=>setDevices(result.devices));},[dashboardId,pairingCode]);
+  useEffect(() => {
+    if (!dashboardId) { setDevices([]); return; }
+    let active = true;
+    const refreshDevices = () => fetch(`/api/dashboards/${dashboardId}/pairings`)
+      .then((response) => response.ok ? response.json() : { devices: [] })
+      .then((result) => { if (active) setDevices(result.devices); });
+    void refreshDevices();
+    const interval = window.setInterval(refreshDevices, 15_000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, [dashboardId]);
+  useEffect(() => {
+    if (!pairingQr) return;
+    const remaining = new Date(pairingQr.expiresAt).valueOf() - Date.now();
+    if (remaining <= 0) { setPairingQr(null); setPairingCode(""); return; }
+    const timeout = window.setTimeout(() => { setPairingQr(null); setPairingCode(""); }, remaining);
+    return () => window.clearTimeout(timeout);
+  }, [pairingQr]);
 
   const patchDocument = (patch: Partial<DashboardDocument>) => setDocument((current) => ({ ...current, ...patch }));
   const patchWidgets = (update: (items: Widget[]) => Widget[]) => setDocument((current) => ({ ...current, pages: current.pages.map((page) => page.id === activePageId ? { ...page, widgets: update(page.widgets) } : page) }));
@@ -150,15 +169,35 @@ export default function Builder() {
 
   const createPairing = async () => {
     if (!dashboardId) return setNotice({ kind: "error", text: "Dashboard zuerst speichern." });
-    const response = await fetch(`/api/dashboards/${dashboardId}/pairings`, { method: "POST" }); const result = await response.json();
-    if (!response.ok) return setNotice({ kind: "error", text: result.error?.message ?? "Pairing fehlgeschlagen" });
-    setPairingCode(result.code); setNotice({ kind: "ok", text: `Pairing-Code ${result.code} ist 10 Minuten gültig.` });
+    setBusy(true); setNotice(null);
+    try {
+      const response = await fetch(`/api/dashboards/${dashboardId}/pairings`, { method: "POST" });
+      const result = await response.json() as { code?: string; qrToken?: string; expiresAt?: string; displayUrl?: string; error?: { message?: string } };
+      if (!response.ok || !result.code || !result.qrToken || !result.expiresAt || !result.displayUrl) throw new Error(result.error?.message ?? "Pairing fehlgeschlagen");
+      const deepLink = new URL("display://pair");
+      deepLink.searchParams.set("url", result.displayUrl);
+      deepLink.searchParams.set("token", result.qrToken);
+      const dataUrl = await QRCode.toDataURL(deepLink.toString(), {
+        width: 360,
+        margin: 2,
+        errorCorrectionLevel: "M",
+        color: { dark: "#090b12", light: "#ffffff" },
+      });
+      setPairingCode(result.code);
+      setPairingQr({ dataUrl, deepLink: deepLink.toString(), expiresAt: result.expiresAt });
+      setNotice({ kind: "ok", text: "QR-Code erstellt. Er ist einmalig und 10 Minuten gültig." });
+    } catch (error) {
+      setPairingQr(null);
+      setNotice({ kind: "error", text: error instanceof Error ? error.message : "Pairing fehlgeschlagen" });
+    } finally {
+      setBusy(false);
+    }
   };
 
   const selectDashboard = async (id: string) => {
-    if (!id) { const next=blankDashboard(); setDashboardId(""); setDisplayUrl(""); setPairingCode(""); setDocument(next); setActivePageId(next.pages[0].id); setSelectedId(next.pages[0].widgets[0]?.id ?? ""); localStorage.removeItem("display-project"); return; }
+    if (!id) { const next=blankDashboard(); setDashboardId(""); setDisplayUrl(""); setPairingCode(""); setPairingQr(null); setDocument(next); setActivePageId(next.pages[0].id); setSelectedId(next.pages[0].widgets[0]?.id ?? ""); localStorage.removeItem("display-project"); return; }
     loadedDashboardId.current=id;
-    const url = `${location.origin}/d/${id}`; setDashboardId(id); setDisplayUrl(url); setPairingCode(""); localStorage.setItem("display-project", JSON.stringify({ dashboardId: id, displayUrl: url }));
+    const url = `${location.origin}/d/${id}`; setDashboardId(id); setDisplayUrl(url); setPairingCode(""); setPairingQr(null); localStorage.setItem("display-project", JSON.stringify({ dashboardId: id, displayUrl: url }));
     setBusy(true);
     try {
       const response = await fetch(`${API}/api/dashboards/${id}/draft`);
@@ -358,7 +397,7 @@ export default function Builder() {
           <p className="eyebrow">Vorlagen</p>{templates.map((template) => <button className="template" title={template.description} key={template.name} onClick={() => { const next = template.create(); setDocument(next); setActivePageId(next.pages[0].id); setSelectedId(next.pages[0].widgets[0]?.id ?? ""); }}><strong>{template.name}</strong><small>{template.category} · {template.description}</small></button>)}
           {customTemplates.map((template, index) => <button className="template" key={`${template.name}-${index}`} onClick={() => { const next = structuredClone(template.document); next.pages.forEach((page)=>{page.id=crypto.randomUUID();page.widgets.forEach((item)=>{item.id=crypto.randomUUID();});}); next.dataSources.forEach((item) => { const old=item.id; item.id=crypto.randomUUID(); next.pages.flatMap((page)=>page.widgets).filter((widget) => widget.dataSourceId===old).forEach((widget) => { widget.dataSourceId=item.id; }); item.auth={type:"none"}; }); setDocument(next); setActivePageId(next.pages[0].id); setSelectedId(next.pages[0].widgets[0]?.id ?? ""); }}>{template.name} · eigen</button>)}
           <button className="text-button" onClick={() => { const clean=structuredClone(document); clean.dataSources.forEach((source) => { source.auth={type:"none"}; }); const next=[...customTemplates,{name:document.name,document:clean}]; setCustomTemplates(next); localStorage.setItem("display-templates",JSON.stringify(next)); setNotice({kind:"ok",text:"Template ohne Zugangsdaten gespeichert."}); }}>Aktuelles Dashboard als Template speichern →</button>
-          {dashboardId && <><p className="eyebrow">Projekt</p><code>{dashboardId}</code><button className="text-button" onClick={loadDraft}>Entwurf neu laden</button><button className="button wide" onClick={createPairing}>Fallback-Code erzeugen</button>{pairingCode && <><small>10 Minuten gültiger Kopplungscode</small><code>{pairingCode}</code></>}<p className="eyebrow">Geräte</p>{devices.map((device)=><div className="device-card" key={device.id}><strong><i className={device.online?"online":"offline"}/> {device.name}</strong><small>{device.online?"Online":"Offline"} · App {device.app_version||"—"} · Android {device.platform_version||"—"} · Dashboard v{device.dashboard_version||"—"}</small>{device.last_error&&<em>{device.last_error}</em>} {!device.revoked_at&&<button className="danger-link" onClick={async()=>{await fetch(`/api/dashboards/${dashboardId}/devices/${device.id}`,{method:"DELETE"});setDevices((items)=>items.filter((item)=>item.id!==device.id));}}>Widerrufen</button>}</div>)}<button className="danger-button" onClick={deleteDashboard}>Dashboard löschen</button></>}
+          {dashboardId && <><p className="eyebrow">Projekt</p><code>{dashboardId}</code><button className="text-button" onClick={loadDraft}>Entwurf neu laden</button><button className="button primary wide" disabled={busy} onClick={createPairing}>QR-Code fürs Handy erzeugen</button>{pairingQr && <div className="pairing-qr"><img src={pairingQr.dataUrl} alt={`QR-Code für ${document.name}`}/><strong>Mit der display-App scannen</strong><small>Öffnet direkt „{document.name}“ und meldet das Gerät automatisch an.</small><small>Einmalig gültig bis {new Date(pairingQr.expiresAt).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})} Uhr.</small><a href={pairingQr.deepLink}>Auf diesem Gerät öffnen</a></div>}{pairingCode && <div className="pairing-fallback"><small>Fallback-Code</small><code>{pairingCode}</code></div>}<p className="eyebrow">Geräte</p>{devices.map((device)=><div className="device-card" key={device.id}><strong><i className={device.online?"online":"offline"}/> {device.name}</strong><small>{device.online?"Online":"Offline"} · App {device.app_version||"—"} · Android {device.platform_version||"—"} · Dashboard v{device.dashboard_version||"—"}</small>{device.last_error&&<em>{device.last_error}</em>} {!device.revoked_at&&<button className="danger-link" onClick={async()=>{await fetch(`/api/dashboards/${dashboardId}/devices/${device.id}`,{method:"DELETE"});setDevices((items)=>items.filter((item)=>item.id!==device.id));}}>Widerrufen</button>}</div>)}<button className="danger-button" onClick={deleteDashboard}>Dashboard löschen</button></>}
         </div>}
       </aside>
 

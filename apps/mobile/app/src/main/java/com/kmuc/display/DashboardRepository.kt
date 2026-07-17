@@ -47,10 +47,24 @@ class DashboardController(context: Context) {
     fun connectWithCode(url: String, pairingCode: String, configPollOverride: Int?, dataPollOverride: Int?, scope: CoroutineScope) {
         require(url.startsWith("http://") || url.startsWith("https://")) { "Bitte eine vollständige HTTP(S)-URL eingeben." }
         require(pairingCode.matches(Regex("\\d{6}"))) { "Pairing-Code muss 6-stellig sein." }
+        connect(url, pairingCode, configPollOverride, dataPollOverride, scope)
+    }
+
+    fun connectWithQrToken(url: String, pairingToken: String, scope: CoroutineScope) {
+        require(url.startsWith("http://") || url.startsWith("https://")) { "Dashboard-URL im QR-Code ist ungültig." }
+        require(pairingToken.matches(Regex("[A-Za-z0-9_-]{32,128}"))) { "QR-Code ist ungültig." }
+        connect(url, pairingToken, null, null, scope)
+    }
+
+    private fun connect(url: String, pairingSecret: String, configPollOverride: Int?, dataPollOverride: Int?, scope: CoroutineScope) {
+        job?.cancel()
+        dashboard = null
+        values.clear()
+        version = 0
         status = "Gerät wird gekoppelt …"
         scope.launch {
             try {
-                val token = pair(url.trim(), pairingCode)
+                val token = pair(url.trim(), pairingSecret)
                 store.saveConnection(url.trim(), token, configPollOverride, dataPollOverride)
                 configured = true
                 start(scope)
