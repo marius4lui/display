@@ -8,6 +8,7 @@ export type Activity = "widgets" | "pages" | "layers" | "data" | "project";
 export type ProjectSection = "general" | "navigation" | "templates" | "devices" | "danger";
 export type DashboardSummary = { id: string; name: string; activeVersion: number | null; updatedAt: string };
 export type DeviceSummary = { id: string; name: string; online: boolean; last_seen_at?: string; app_version?: string; platform_version?: string; dashboard_version?: number; last_error?: string; revoked_at?: string };
+export type PairingQr = { dataUrl: string; deepLink: string; expiresAt: string };
 export type VersionSummary = { version: number; contentHash: string; byteSize: number; publishedAt: string; active: boolean };
 export type TemplateEntry = { name: string; category: string; description: string; create: () => DashboardDocument };
 
@@ -40,7 +41,7 @@ export function ActivityRail({ activity, onChange }: { activity: Activity; onCha
 }
 
 export function ContextPanel({
-  activity, document, activePageId, selectedId, dashboards, devices, versions, dashboardId, pairingCode,
+  activity, document, activePageId, selectedId, dashboards, devices, versions, dashboardId, pairingCode, pairingQr,
   templates, customTemplates, dataStatus, busy, onAddWidget, onWidgetDragStart, onDragEnd,
   onSelectPage, onAddPage, onDuplicatePage, onMovePage, onDeletePage, onRenamePage,
   onSelectWidget, onAddSource, onOpenSource, onSelectDashboard, onPatchDocument,
@@ -55,6 +56,7 @@ export function ContextPanel({
   versions: VersionSummary[];
   dashboardId: string;
   pairingCode: string;
+  pairingQr: PairingQr | null;
   templates: TemplateEntry[];
   customTemplates: Array<{ name: string; document: DashboardDocument }>;
   dataStatus: Record<string, boolean>;
@@ -160,7 +162,7 @@ export function ContextPanel({
         {projectSection === "templates" && <div className="template-list"><button className="secondary-button full" onClick={onSaveTemplate}><Icon name="plus"/> Aktuelles Dashboard speichern</button>{templates.map((template) => <button className="template-row" key={template.name} onClick={() => onApplyTemplate(template)}><span><strong>{template.name}</strong><small>{template.description}</small></span><i>{template.category}</i></button>)}{customTemplates.map((template, index) => <button className="template-row" key={`${template.name}-${index}`} onClick={() => onApplyCustomTemplate(template.document)}><span><strong>{template.name}</strong><small>Persönliche Vorlage ohne Zugangsdaten</small></span><i>Eigen</i></button>)}</div>}
         {projectSection === "devices" && <div className="form-stack">
           {!dashboardId ? <div className="panel-empty"><Icon name="project"/><strong>Dashboard speichern</strong><p>Geräte können verbunden werden, sobald das Dashboard gespeichert ist.</p></div> : <>
-            <section className="panel-section"><h3>Gerät koppeln</h3><p className="section-note">Der Code ist zehn Minuten gültig.</p><button className="primary-button full" onClick={onPair}>Pairing-Code erzeugen</button>{pairingCode && <div className="pairing-code"><small>Pairing-Code</small><strong>{pairingCode}</strong></div>}</section>
+            <section className="panel-section"><h3>Gerät koppeln</h3><p className="section-note">QR-Code mit der display-App scannen. Die Anmeldung erfolgt automatisch und ist einmalig zehn Minuten gültig.</p><button className="primary-button full" disabled={busy} onClick={onPair}>QR-Code fürs Handy erzeugen</button>{pairingQr && <div className="pairing-qr"><img src={pairingQr.dataUrl} alt={`QR-Code für ${document.name}`}/><strong>Mit der display-App scannen</strong><small>Öffnet direkt „{document.name}“ und meldet das Gerät automatisch an.</small><small>Gültig bis {new Date(pairingQr.expiresAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr.</small><a href={pairingQr.deepLink}>Auf diesem Gerät öffnen</a></div>}{pairingCode && <div className="pairing-code"><small>Fallback-Code</small><strong>{pairingCode}</strong></div>}</section>
             <section className="device-list"><h3>Gekoppelte Geräte <span>{devices.length}</span></h3>{devices.length === 0 && <div className="section-empty">Noch keine Geräte gekoppelt.</div>}{devices.map((device) => <article className="device-card" key={device.id}><header><span className={device.online ? "device-online" : "device-offline"}/><div><strong>{device.name}</strong><small>{device.online ? "Online" : "Offline"}{device.last_seen_at ? ` · ${new Date(device.last_seen_at).toLocaleString("de-DE")}` : ""}</small></div></header><dl><div><dt>App</dt><dd>{device.app_version || "—"}</dd></div><div><dt>Android</dt><dd>{device.platform_version || "—"}</dd></div><div><dt>Dashboard</dt><dd>{device.dashboard_version ? `v${device.dashboard_version}` : "—"}</dd></div></dl>{device.last_error && <p>{device.last_error}</p>}{!device.revoked_at && <button className="danger-outline" onClick={() => onRevokeDevice(device.id)}>Zugriff widerrufen</button>}</article>)}</section>
           </>}
         </div>}

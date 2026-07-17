@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
+import QRCode from "qrcode";
 import {
   blankDashboard, createWidget, normalizeDashboard, placementIsFree, systemTemplates,
   type DashboardDocument, type DashboardPage, type DataSource, type LegacyDashboardDocument,
@@ -8,7 +9,7 @@ import {
 } from "../lib/dashboard";
 import ApiWorkbench from "./ApiWorkbench";
 import { CanvasStage, type Placement, type PreviewDevice, type ResizeDirection } from "./studio/CanvasStage";
-import { ActivityRail, ContextPanel, type Activity, type DashboardSummary, type DeviceSummary, type TemplateEntry, type VersionSummary } from "./studio/ContextPanel";
+import { ActivityRail, ContextPanel, type Activity, type DashboardSummary, type DeviceSummary, type PairingQr, type TemplateEntry, type VersionSummary } from "./studio/ContextPanel";
 import { Inspector } from "./studio/Inspector";
 import { StudioTopbar } from "./studio/StudioTopbar";
 
@@ -25,6 +26,7 @@ export default function Builder() {
   const [dashboardId, setDashboardId] = useState("");
   const [displayUrl, setDisplayUrl] = useState("");
   const [pairingCode, setPairingCode] = useState("");
+  const [pairingQr, setPairingQr] = useState<PairingQr | null>(null);
   const [dashboards, setDashboards] = useState<DashboardSummary[]>([]);
   const [devices, setDevices] = useState<DeviceSummary[]>([]);
   const [versions, setVersions] = useState<VersionSummary[]>([]);
@@ -73,8 +75,22 @@ export default function Builder() {
 
   useEffect(() => {
     if (!dashboardId) { setDevices([]); return; }
-    void fetch(`/api/dashboards/${dashboardId}/pairings`).then((response) => response.ok ? response.json() : { devices: [] }).then((result: { devices: DeviceSummary[] }) => setDevices(result.devices));
-  }, [dashboardId, pairingCode]);
+    let active = true;
+    const refreshDevices = () => fetch(`/api/dashboards/${dashboardId}/pairings`)
+      .then((response) => response.ok ? response.json() : { devices: [] })
+      .then((result: { devices: DeviceSummary[] }) => { if (active) setDevices(result.devices); });
+    void refreshDevices();
+    const interval = window.setInterval(refreshDevices, 15_000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, [dashboardId]);
+
+  useEffect(() => {
+    if (!pairingQr) return;
+    const remaining = new Date(pairingQr.expiresAt).valueOf() - Date.now();
+    if (remaining <= 0) { setPairingQr(null); setPairingCode(""); return; }
+    const timeout = window.setTimeout(() => { setPairingQr(null); setPairingCode(""); }, remaining);
+    return () => window.clearTimeout(timeout);
+  }, [pairingQr]);
 
   const loadVersions = (id = dashboardId) => {
     if (!id) { setVersions([]); return; }
@@ -149,13 +165,13 @@ export default function Builder() {
   const selectDashboard = async (id: string) => {
     if (!id) {
       const next = blankDashboard();
-      setDashboardId(""); setDisplayUrl(""); setPairingCode(""); applyDocument(next, false);
+      setDashboardId(""); setDisplayUrl(""); setPairingCode(""); setPairingQr(null); applyDocument(next, false);
       localStorage.removeItem("display-project");
       return;
     }
     loadedDashboardId.current = id;
     const url = `${location.origin}/d/${id}`;
-    setDashboardId(id); setDisplayUrl(url); setPairingCode("");
+    setDashboardId(id); setDisplayUrl(url); setPairingCode(""); setPairingQr(null);
     localStorage.setItem("display-project", JSON.stringify({ dashboardId: id, displayUrl: url }));
     await loadDraft(id);
   };
@@ -180,11 +196,25 @@ export default function Builder() {
 
   const createPairing = async () => {
     if (!dashboardId) return setNotice({ kind: "error", text: "Dashboard zuerst speichern." });
-    const response = await fetch(`/api/dashboards/${dashboardId}/pairings`, { method: "POST" });
-    const result = await response.json() as { code?: string; error?: { message?: string } };
-    if (!response.ok || !result.code) return setNotice({ kind: "error", text: result.error?.message ?? "Pairing fehlgeschlagen" });
-    setPairingCode(result.code);
-    setNotice({ kind: "ok", text: `Pairing-Code ${result.code} ist 10 Minuten gültig.` });
+    setBusy(true); setNotice(null);
+    try {
+      const response = await fetch(`/api/dashboards/${dashboardId}/pairings`, { method: "POST" });
+      const result = await response.json() as { code?: string; qrToken?: string; expiresAt?: string; displayUrl?: string; error?: { message?: string } };
+      if (!response.ok || !result.code || !result.qrToken || !result.expiresAt || !result.displayUrl) throw new Error(result.error?.message ?? "Pairing fehlgeschlagen");
+      const deepLink = new URL("display://pair");
+      deepLink.searchParams.set("url", result.displayUrl);
+      deepLink.searchParams.set("token", result.qrToken);
+      const dataUrl = await QRCode.toDataURL(deepLink.toString(), {
+        width: 360, margin: 2, errorCorrectionLevel: "M",
+        color: { dark: "#090b12", light: "#ffffff" },
+      });
+      setPairingCode(result.code);
+      setPairingQr({ dataUrl, deepLink: deepLink.toString(), expiresAt: result.expiresAt });
+      setNotice({ kind: "ok", text: "QR-Code erstellt. Er ist einmalig und 10 Minuten gültig." });
+    } catch (error) {
+      setPairingQr(null);
+      setNotice({ kind: "error", text: error instanceof Error ? error.message : "Pairing fehlgeschlagen" });
+    } finally { setBusy(false); }
   };
 
   const templates = useMemo<TemplateEntry[]>(() => [{ name: "Leer", category: "Basis", description: "Leeres Dashboard", create: blankDashboard }, ...systemTemplates], []);
@@ -350,7 +380,7 @@ export default function Builder() {
       <ActivityRail activity={activity} onChange={(next) => { setActivity(next); setLeftOpen(true); }}/>
       {leftOpen && <ContextPanel
         activity={activity} document={document} activePageId={activePage.id} selectedId={selectedId}
-        dashboards={dashboards} devices={devices} versions={versions} dashboardId={dashboardId} pairingCode={pairingCode}
+        dashboards={dashboards} devices={devices} versions={versions} dashboardId={dashboardId} pairingCode={pairingCode} pairingQr={pairingQr}
         templates={templates} customTemplates={customTemplates} dataStatus={dataStatus} busy={busy}
         onAddWidget={addWidget} onWidgetDragStart={beginLibraryDrag} onDragEnd={finishDrag}
         onSelectPage={(id) => { const page = document.pages.find((item) => item.id === id); if (page) { setActivePageId(id); setSelectedId(page.widgets[0]?.id ?? ""); } }}

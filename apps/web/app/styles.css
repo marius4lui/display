@@ -376,6 +376,11 @@ svg { width: 18px; height: 18px; }
 .pairing-code { display: grid; padding: 13px; border: 1px dashed #5d4aa3; border-radius: 8px; background: #181428; text-align: center; }
 .pairing-code small { color: var(--muted); font-size: 9px; }
 .pairing-code strong { margin-top: 3px; color: #c6bcff; font: 700 23px "Space Grotesk"; letter-spacing: .15em; }
+.pairing-qr { display: grid; justify-items: center; gap: 8px; padding: 12px; border: 1px solid #494068; border-radius: 10px; background: linear-gradient(145deg, #171b28, #201a35); text-align: center; }
+.pairing-qr img { display: block; width: min(100%, 220px); height: auto; padding: 7px; border-radius: 9px; background: white; }
+.pairing-qr strong { font: 600 11px "Space Grotesk"; }
+.pairing-qr small { color: #aeb3c2; font-size: 9px; line-height: 1.45; }
+.pairing-qr a { color: #b9adff; font-size: 9px; }
 .device-list { display: grid; gap: 8px; }
 .device-list > h3 { display: flex; justify-content: space-between; }
 .device-list > h3 span { padding: 2px 6px; border-radius: 8px; background: #242836; font-size: 8px; }
