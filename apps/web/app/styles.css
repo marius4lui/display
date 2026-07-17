@@ -565,6 +565,8 @@ svg { width: 18px; height: 18px; }
 .player-artboard { width: min(100vw, calc(100vh * 16 / 9)); height: min(100vh, calc(100vw * 9 / 16)); overflow: hidden; }
 .player-artboard > .display-grid { width: 100%; height: 100%; }
 .player-menu-hotspot { position: fixed; z-index: 30; top: 0; right: 0; width: 64px; height: 64px; border: 0; background: transparent; opacity: 0; cursor: pointer; }
+.player-fullscreen-button { position: fixed; z-index: 35; top: 18px; left: 50%; min-height: 42px; translate: -50% 0; padding: 0 18px; border: 1px solid #ffffff2b; border-radius: 999px; background: #191f2ddd; color: white; font: 600 12px "Space Grotesk", sans-serif; box-shadow: 0 10px 32px #0008; backdrop-filter: blur(10px); cursor: pointer; }
+.player-fullscreen-button:hover { border-color: #8e7cff; background: #272044ed; }
 .player-status, .player-notice { position: fixed; z-index: 35; right: 18px; bottom: 18px; padding: 9px 13px; border: 1px solid #ffffff20; border-radius: 999px; background: #161b28dd; color: #ffd08a; font-size: 12px; backdrop-filter: blur(10px); }
 .player-notice { right: 50%; bottom: 26px; translate: 50% 0; color: white; }
 .player-menu-backdrop { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; background: #0009; backdrop-filter: blur(5px); }

@@ -76,6 +76,7 @@ export default function PlayerApp() {
   const [offline, setOffline] = useState(false);
   const [menu, setMenu] = useState(false);
   const [notice, setNotice] = useState("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const etag = useRef("");
   const lastSync = useRef<string | null>(null);
   const lastData = useRef<string | null>(null);
@@ -141,6 +142,16 @@ export default function PlayerApp() {
     window.addEventListener("keydown", key); return () => window.removeEventListener("keydown", key);
   }, []);
   useEffect(() => {
+    const changed = () => setIsFullscreen(!!document.fullscreenElement);
+    changed();
+    document.addEventListener("fullscreenchange", changed);
+    return () => document.removeEventListener("fullscreenchange", changed);
+  }, []);
+  useEffect(() => {
+    if (!config || document.fullscreenElement || !document.fullscreenEnabled) return;
+    void document.documentElement.requestFullscreen().catch(() => {});
+  }, [config?.version]);
+  useEffect(() => {
     if (!config) return;
     const timer = window.setInterval(() => void loadConfig(), Math.max(10, config.document.settings.configPollSeconds) * 1000);
     return () => clearInterval(timer);
@@ -200,7 +211,11 @@ export default function PlayerApp() {
     } catch { setNotice("Die Verbindung konnte nicht getrennt werden. Bitte Netzwerk prüfen."); window.setTimeout(() => setNotice(""), 3500); }
   }
   async function fullscreen() {
-    try { await document.documentElement.requestFullscreen(); setMenu(false); }
+    try {
+      if (!document.fullscreenEnabled) throw new Error();
+      await document.documentElement.requestFullscreen();
+      setMenu(false);
+    }
     catch { setNotice("Vollbild muss durch eine direkte Nutzeraktion erlaubt werden."); window.setTimeout(() => setNotice(""), 3500); }
   }
 
@@ -211,6 +226,7 @@ export default function PlayerApp() {
   return <main className="web-player">
     <div className="player-artboard"><DashboardRenderer document={config.document} pageIndex={page} runtime={runtime} onPageChange={setPage} /></div>
     <button className="player-menu-hotspot" aria-label="Player-Menü öffnen" onClick={() => setMenu(true)} />
+    {!isFullscreen && <button className="player-fullscreen-button" onClick={() => void fullscreen()}>Vollbild aktivieren</button>}
     {(offline || syncError || Object.values(runtime).some((state) => state.stale)) && <div className="player-status">{offline ? "Offline · letzter Stand" : syncError ? `Synchronisation: ${syncError}` : "Daten teilweise veraltet"}</div>}
     {menu && <div className="player-menu-backdrop" onClick={() => setMenu(false)}><section className="player-menu" onClick={(event) => event.stopPropagation()}><strong>Player</strong><button onClick={() => void fullscreen()}>Vollbild</button><button className="danger-outline" onClick={() => void disconnect()}>Verbindung trennen</button><small>Menü: obere rechte Ecke oder Strg + Umschalt + M</small></section></div>}
     {notice && <div className="player-notice">{notice}</div>}
