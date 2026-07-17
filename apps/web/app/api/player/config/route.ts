@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { DashboardDocument, DataSource } from "../../../../lib/dashboard";
-import { resolveDataSourceForClient } from "../../../../lib/server/data-source";
+import type { DashboardDocument } from "../../../../lib/dashboard";
 import { apiError, sha256 } from "../../../../lib/server/http";
 import { clearPlayerCookie, playerDevice, requireDisplayHost } from "../../../../lib/server/player";
 
@@ -14,11 +13,15 @@ export async function GET(request: NextRequest) {
   const { data: version } = await database.from("display_versions").select("version, document, published_at").eq("display_id", display.id).eq("version", display.active_version).maybeSingle();
   if (!version?.document) return apiError("LEGACY_VERSION", "Diese Dashboard-Version wird nicht unterstützt", 409);
   const document = structuredClone(version.document) as DashboardDocument;
-  try {
-    document.dataSources = await Promise.all((document.dataSources ?? []).map((source: DataSource) => resolveDataSourceForClient(source, display.owner_id, database)));
-  } catch (failure) {
-    return apiError("SOURCE_CONFIGURATION_ERROR", failure instanceof Error ? failure.message : "Datenquellen konnten nicht geladen werden", 500);
-  }
+  document.dataSources = (document.dataSources ?? []).map((source) => ({
+    ...source,
+    url: "",
+    headers: {},
+    query: {},
+    variables: {},
+    body: undefined,
+    auth: { type: "none" },
+  }));
   const studioOrigin = new URL(process.env.PUBLIC_APP_URL ?? request.url).origin;
   for (const page of document.pages) {
     for (const widget of page.widgets) {

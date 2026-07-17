@@ -50,18 +50,9 @@ async function clearCache() {
   } catch { /* Ein nicht verfügbarer Cache verhindert das Trennen nicht. */ }
 }
 
-function sourceRequest(source: DataSource) {
-  const headers = new Headers(source.headers);
-  if (source.auth.type === "bearer" && source.auth.value) headers.set("Authorization", `Bearer ${source.auth.value}`);
-  if (source.auth.type === "apiKey" && source.auth.name && source.auth.value) headers.set(source.auth.name, source.auth.value);
-  if (source.auth.type === "basic") headers.set("Authorization", `Basic ${btoa(`${source.auth.username ?? ""}:${source.auth.password ?? ""}`)}`);
-  return { method: source.method, headers, body: source.method === "GET" ? undefined : source.body };
-}
-
-function diagnostic(error: unknown, source: DataSource) {
-  if (location.protocol === "https:" && source.url.startsWith("http:")) return "Mixed Content: Eine HTTPS-Seite darf diese HTTP-Datenquelle nicht laden.";
+function diagnostic(error: unknown) {
   if (error instanceof DOMException && error.name === "AbortError") return "Zeitüberschreitung beim Abruf der Datenquelle.";
-  if (error instanceof TypeError) return "Netzwerkfehler. Häufige Ursachen sind CORS, DNS oder eine unterbrochene Verbindung.";
+  if (error instanceof TypeError) return "Der Display-Server ist nicht erreichbar.";
   return error instanceof Error ? error.message : "Unbekannter Datenquellenfehler";
 }
 
@@ -162,19 +153,17 @@ export default function PlayerApp() {
       const controller = new AbortController(); controllers.add(controller);
       const timeout = window.setTimeout(() => controller.abort(), 20_000);
       try {
-        const response = await fetch(source.url, { ...sourceRequest(source), signal: controller.signal, cache: "no-store" });
-        if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
-        const bytes = await response.arrayBuffer();
-        if (bytes.byteLength > 1024 * 1024) throw new Error("Antwort überschreitet 1 MB.");
-        const text = new TextDecoder().decode(bytes);
-        let value: unknown; try { value = JSON.parse(text); } catch { throw new Error("Antwort ist kein gültiges JSON."); }
+        const response = await fetch(`/api/player/data/${encodeURIComponent(source.id)}`, { method: "POST", signal: controller.signal, cache: "no-store" });
+        const result = await response.json() as { value?: unknown; checkedAt?: string; error?: { message?: string } };
+        if (!response.ok) throw new Error(result.error?.message ?? `Datenquelle antwortet mit HTTP ${response.status}.`);
+        const value = result.value;
         const previous = runtimeRef.current[source.id];
         const history = appendHistory(previous?.history ?? [], value);
-        const completedAt = new Date().toISOString();
+        const completedAt = result.checkedAt ?? new Date().toISOString();
         updateRuntime(source.id, { value, history, error: undefined, stale: false, checkedAt: completedAt, succeededAt: completedAt });
         lastData.current = completedAt; lastError.current = null;
       } catch (error) {
-        const message = diagnostic(error, source); lastError.current = `${source.name}: ${message}`;
+        const message = diagnostic(error); lastError.current = `${source.name}: ${message}`;
         updateRuntime(source.id, { error: message, stale: true, checkedAt: new Date().toISOString() });
       } finally { clearTimeout(timeout); controllers.delete(controller); }
     };

@@ -4,7 +4,7 @@
 
 `dis.bz3.eu` wird der eigenständige browserbasierte Display-Client. Beim ersten Aufruf gibt der Nutzer einen im Studio erzeugten, sechsstelligen und zehn Minuten gültigen Kopplungscode ein. Danach speichert der Client eine widerrufbare Gerätefreigabe als hostgebundenes HttpOnly-Cookie und startet bei späteren Aufrufen direkt den Player.
 
-Der Player zeigt ausschließlich die aktive veröffentlichte Dashboard-Version, führt alle Datenquellen-Requests direkt im Browser aus und verhält sich funktional wie die Android-App. Studio und Player laufen im selben Next.js-Deployment, sind aber über Host-Routing, getrennte Oberflächen und getrennte Cookies isoliert.
+Der Player zeigt ausschließlich die aktive veröffentlichte Dashboard-Version und verhält sich funktional wie die Android-App. Datenquellen werden über einen abgesicherten Next.js-Backend-Proxy geladen. Studio und Player laufen im selben Next.js-Deployment, sind aber über Host-Routing, getrennte Oberflächen und getrennte Cookies isoliert.
 
 ## Implementierung
 
@@ -43,12 +43,14 @@ Der Player zeigt ausschließlich die aktive veröffentlichte Dashboard-Version, 
 ### Clientseitiger Runtime-Ablauf
 
 - Der Player lädt mit dem HttpOnly-Cookie die aktive veröffentlichte Version über einen Player-spezifischen Konfigurationsendpunkt.
-- Dieser Endpunkt validiert das Browsergerät, unterstützt ETag/`304` und liefert die für den Client aufgelösten Datenquellen.
+- Dieser Endpunkt validiert das Browsergerät, unterstützt ETag/`304` und liefert ausschließlich bereinigte Datenquellen-Metadaten ohne Ziel-URLs oder Zugangsdaten.
 - Der Browser plant jede Datenquelle anhand von `refreshSeconds` beziehungsweise `dataPollSeconds`.
-- HTTP-Methode, Header, Authentifizierung und Body werden direkt vom Browser zur konfigurierten Ziel-API gesendet; es gibt keinen Server-Proxy und keine Collector-Abhängigkeit.
+- Der Browser ruft eine Player-Route anhand der veröffentlichten Datenquellen-ID auf. Der Server lädt die zugehörige aktive Konfiguration, löst Secrets auf und sendet HTTP-Methode, Header, Authentifizierung und Body an die Ziel-API.
+- Der Proxy akzeptiert keine frei übergebbaren Ziel-URLs und kann ausschließlich Datenquellen des gekoppelten, aktiven veröffentlichten Displays ausführen.
+- Der vorhandene Collector ist keine Abhängigkeit dieses Datenpfads.
 - Werte, kurze Historie, letzter erfolgreicher Stand, Fehler und Stale-Status werden im Browser verwaltet.
 - Konfigurationsänderungen werden anhand von `configPollSeconds` erkannt; eine neue veröffentlichte Version wird automatisch übernommen.
-- CORS-, Mixed-Content-, Timeout-, DNS-, HTTP- und JSON-Fehler werden als verständliche Clientdiagnose behandelt, ohne den letzten gültigen Wert sofort zu verwerfen.
+- Timeout-, DNS-, TLS-, HTTP- und JSON-Fehler werden als verständliche Clientdiagnose behandelt, ohne den letzten gültigen Wert sofort zu verwerfen. Browser-CORS und Mixed Content betreffen den serverseitigen Zielabruf nicht.
 - Der Player sendet regelmäßig Heartbeats mit Plattform, Browser-/App-Version, aktiver Dashboard-Version und letztem Synchronisationsstatus.
 
 ### Lokaler letzter Stand
@@ -67,7 +69,7 @@ Der Player zeigt ausschließlich die aktive veröffentlichte Dashboard-Version, 
 - `device_pairing_codes` wird um einen globalen, gehashten Web-Lookup ergänzt.
 - Geräte-Metadaten unterscheiden mindestens Android und Web.
 - Bestehende Android-Endpunkte, veröffentlichte `/d/{id}`-Adressen und Bearer-Token bleiben kompatibel.
-- Der vorhandene serverseitige Collector und Runtime-Endpunkt werden für dieses Feature weder verwendet noch als Datenpfad des Web-Players vorausgesetzt.
+- Der vorhandene Collector und Runtime-Endpunkt werden für dieses Feature nicht verwendet; der Web-Player nutzt ausschließlich den quellgebundenen Player-Proxy.
 
 ## Tests und Abnahme
 
@@ -79,7 +81,7 @@ Der Player zeigt ausschließlich die aktive veröffentlichte Dashboard-Version, 
 - Widerruf im Studio beendet beim nächsten Polling den Zugriff und führt zurück zur Kopplungsansicht.
 - Trennen im versteckten Menü entfernt die lokale Freigabe.
 - Alle Widget-Typen, Regeln, Seitenwechsel, Datenformate, Animationen und Fehlerzustände werden gegen Studio-Vorschau und Android-Verhalten geprüft.
-- Datenquellen-Requests laufen nachweislich aus dem Browser; CORS- und Mixed-Content-Fehler erscheinen als Diagnose.
+- Datenquellen-Requests laufen nachweislich über den authentifizierten Player-Proxy; Ziel-URLs und Secrets erscheinen nicht in der Browser-Konfiguration.
 - Neue Publishes werden automatisch übernommen, Entwurfsänderungen hingegen nicht.
 - Netzwerkverlust zeigt letzten Stand und Offline-Markierung; Wiederverbindung aktualisiert ohne Reload.
 - Host-Routing liefert auf `dis.bz3.eu` keine Studio-, Login- oder Verwaltungsoberflächen.
@@ -92,4 +94,4 @@ Der Player zeigt ausschließlich die aktive veröffentlichte Dashboard-Version, 
 - Ein Browser ist gleichzeitig mit genau einem Display gekoppelt.
 - Sechsstellige Codes sind kurzlebige Kopplungsgeheimnisse und keine dauerhaften öffentlichen Dashboard-Adressen.
 - Studio und Player teilen ein Deployment, bleiben aber logisch und sicherheitstechnisch getrennte Hosts.
-- Datenquellen müssen Browserzugriff selbst erlauben; der Player umgeht CORS und HTTPS-Sicherheitsregeln nicht.
+- Datenquellen müssen vom Next.js-Backend erreichbar sein, benötigen aber keine CORS-Freigabe für `dis.bz3.eu`.

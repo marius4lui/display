@@ -1,6 +1,6 @@
 # display
 
-`display` erstellt Android-Dashboards. Next.js liefert Studio und API; eine selbst gehostete Supabase-Instanz übernimmt PostgreSQL und E-Mail/Passwort-Accounts. Ein separater Backend-Dienst und MySQL werden nicht benötigt.
+`display` erstellt Android- und Web-Dashboards. Next.js liefert Studio, Player und API; eine selbst gehostete Supabase-Instanz übernimmt PostgreSQL und E-Mail/Passwort-Accounts. Der Web-Player lädt Datenquellen über einen abgesicherten Next.js-Proxy, damit Zielsysteme kein Browser-CORS bereitstellen müssen.
 
 Das Studio speichert Dashboard-Dokumente direkt in Supabase. Android führt konfigurierte Datenquellen auf dem Gerät aus und hält den letzten gültigen Stand offline. Der Zugriff auf Studio und Gerätefreigabe wird über Account-Sessions und widerrufbare Geräte-Tokens geschützt.
 
@@ -71,7 +71,8 @@ Account-Routen verwenden sichere HttpOnly-Session-Cookies. Geräte verwenden ein
 | `POST` | `/api/dashboards/{id}/pairings` | Einmaligen Pairing-Code erzeugen |
 | `POST` | `/api/device/pair` | Pairing-Code gegen Geräte-Token tauschen |
 | `POST` | `/api/player/pair` | Web-Browser per sechsstelligen Code koppeln |
-| `GET` | `/api/player/config` | Aktive Version und aufgelöste Browser-Datenquellen |
+| `GET` | `/api/player/config` | Aktive Version und bereinigte Datenquellen-Metadaten |
+| `POST` | `/api/player/data/{sourceId}` | Veröffentlichte Datenquelle serverseitig abrufen |
 | `POST` | `/api/player/heartbeat`, `/api/player/disconnect` | Web-Gerätestatus und Trennen |
 | `GET` | `/d/{id}` | Aktive Version mit Geräte-Token und ETag abrufen |
 | `GET` | `/d/{id}/runtime` | Aktuelle Werte und bis zu sieben Tage Historie |

@@ -7,7 +7,9 @@ import { spawn } from "node:child_process";
 const port = 32187;
 let server;
 let database;
+let upstream;
 let pairingAttempt = null;
+let upstreamRequest = null;
 const validLookup = createHash("sha256").update("123456").digest("hex");
 
 function request(path, host, method = "GET", body, extraHeaders = {}) {
@@ -79,7 +81,15 @@ before(async () => {
           schemaVersion: 3,
           name: "Test",
           settings: { configPollSeconds: 30, dataPollSeconds: 60, columns: 12, rows: 8, background: "#000", foreground: "#fff" },
-          dataSources: [],
+          dataSources: [{
+            id: "home-assistant",
+            name: "Home Assistant",
+            method: "GET",
+            url: "http://127.0.0.1:32189/api/state",
+            headers: { "X-Proxy-Test": "server-side" },
+            auth: { type: "bearer", value: "super-secret-token" },
+            refreshSeconds: 30,
+          }],
           pages: [{ id: "page", name: "Seite 1", widgets: [] }],
           pageNavigation: { visible: false, x: 4, y: 7, width: 4, height: 1, style: { background: "#111", foreground: "#fff", accent: "#70f", align: "center" } },
         },
@@ -90,6 +100,12 @@ before(async () => {
     response.end(JSON.stringify({ message: "mock route missing" }));
   });
   await new Promise((resolve) => database.listen(32188, "127.0.0.1", resolve));
+  upstream = http.createServer((request, response) => {
+    upstreamRequest = { method: request.method, authorization: request.headers.authorization, marker: request.headers["x-proxy-test"] };
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify({ state: "42", attributes: { unit_of_measurement: "°C" } }));
+  });
+  await new Promise((resolve) => upstream.listen(32189, "127.0.0.1", resolve));
   server = spawn(process.execPath, ["../../node_modules/next/dist/bin/next", "start", "-p", String(port)], {
     cwd: new URL("..", import.meta.url),
     env: {
@@ -117,6 +133,7 @@ before(async () => {
 after(() => {
   server?.kill("SIGTERM");
   database?.close();
+  upstream?.close();
 });
 
 test("Display-Host liefert nur den Player", async () => {
@@ -160,11 +177,20 @@ test("Erfolgreiches Pairing setzt nur das hostgebundene HttpOnly-Token", async (
   const config = await request("/api/player/config", `display.localhost:${port}`, "GET", undefined, { Cookie: cookieHeader });
   assert.equal(config.status, 200);
   assert.match(config.body, /"version":1/);
+  assert.doesNotMatch(config.body, /127\.0\.0\.1:32189|super-secret-token|server-side/);
   assert.ok(config.headers.etag);
   assert.match(config.headers["cache-control"] ?? "", /private, no-store/);
 
   const unchanged = await request("/api/player/config", `display.localhost:${port}`, "GET", undefined, { Cookie: cookieHeader, "If-None-Match": config.headers.etag });
   assert.equal(unchanged.status, 304);
+
+  const data = await request("/api/player/data/home-assistant", `display.localhost:${port}`, "POST", undefined, { Cookie: cookieHeader });
+  assert.equal(data.status, 200);
+  assert.match(data.body, /"state":"42"/);
+  assert.deepEqual(upstreamRequest, { method: "GET", authorization: "Bearer super-secret-token", marker: "server-side" });
+
+  const unknownSource = await request("/api/player/data/not-published", `display.localhost:${port}`, "POST", undefined, { Cookie: cookieHeader });
+  assert.equal(unknownSource.status, 404);
 
   const heartbeat = await request("/api/player/heartbeat", `display.localhost:${port}`, "POST", JSON.stringify({ appVersion: "web-test", dashboardVersion: 1 }), { Cookie: cookieHeader });
   assert.equal(heartbeat.status, 204);
