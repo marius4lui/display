@@ -17,13 +17,14 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
   </label>;
 }
 
-export function Inspector({ document, page, selected, onPatch, onDelete, onDuplicate, onNotice, onOpenData }: {
+export function Inspector({ document, page, selected, onPatch, onDelete, onDuplicate, onFillPage, onNotice, onOpenData }: {
   document: DashboardDocument;
   page: DashboardPage;
   selected?: Widget;
   onPatch: (patch: Partial<Widget>) => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onFillPage: () => void;
   onNotice: (text: string) => void;
   onOpenData: () => void;
 }) {
@@ -116,6 +117,7 @@ export function Inspector({ document, page, selected, onPatch, onDelete, onDupli
       <section className="inspector-section">
         <h3>Layout</h3>
         <p className="section-note">Direkt auf dem Artboard ziehen oder präzise Werte eingeben.</p>
+        <button className="secondary-button full" onClick={onFillPage}><Icon name="fit"/> Ganzen Bildschirm ausfüllen</button>
         <div className="layout-grid">{(["x", "y", "width", "height"] as const).map((key) => <label key={key}><span>{key === "width" ? "B" : key === "height" ? "H" : key.toUpperCase()}</span><input type="number" min={key === "width" || key === "height" ? 1 : 0} value={selected[key]} onChange={(event) => {
           const value = Number(event.target.value);
           const next = { ...selected, [key]: value };

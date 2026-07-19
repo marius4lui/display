@@ -532,6 +532,9 @@ svg { width: 18px; height: 18px; }
 .canvas-widget[data-widget-type="immich_album"] { padding: 0; overflow: hidden; touch-action: pan-y; }
 .canvas-widget[data-widget-type="immich_album"] > small { position: absolute; z-index: 3; top: 12px; left: 14px; padding: 5px 8px; border-radius: 7px; background: #0008; color: white; }
 .canvas-widget[data-widget-type="immich_album"] .widget-value { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; }
+.canvas-widget.editing-widget[data-widget-type="immich_album"] .immich-album { pointer-events: none; }
+.canvas-widget.editing-widget.selected[data-widget-type="immich_album"] { overflow: visible; }
+.canvas-widget.editing-widget.selected[data-widget-type="immich_album"] .widget-value { overflow: hidden; border-radius: inherit; }
 .immich-album { position: absolute; inset: 0; overflow: hidden; user-select: none; touch-action: pan-y; }
 .immich-album > img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; pointer-events: none; }
 .immich-caption, .immich-counter { position: absolute; z-index: 2; bottom: 12px; padding: 6px 9px; border-radius: 7px; background: #0009; color: #fff; font: 500 clamp(9px, 2.4cqh, 15px) system-ui; }

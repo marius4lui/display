@@ -20,7 +20,7 @@ function CanvasWidget({ widget, data, selected, interactive, onSelect, onDragSta
   onSelect: () => void; onDragStart: (event: DragEvent<HTMLElement>) => void; onDragEnd: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>, direction: ResizeDirection) => void;
 }) {
-  return <DisplayWidget widget={widget} runtime={{ value: data[widget.dataSourceId ?? ""] }} className={`${selected ? "selected" : ""}${interactive ? "" : " preview-only"}`} articleProps={{ draggable: interactive, onDragStart, onDragEnd, onClick: interactive ? onSelect : undefined }}>
+  return <DisplayWidget widget={widget} runtime={{ value: data[widget.dataSourceId ?? ""] }} className={`${selected ? "selected" : ""}${interactive ? " editing-widget" : " preview-only"}`} articleProps={{ draggable: interactive, onDragStart, onDragEnd, onClick: interactive ? onSelect : undefined }}>
     {interactive && selected && (["n", "ne", "e", "se", "s", "sw", "w", "nw"] as ResizeDirection[]).map((direction) => <button draggable={false} aria-label={`Größe ${direction}`} className={`resize-handle resize-${direction}`} key={direction} onDragStart={(event) => event.preventDefault()} onPointerDown={(event) => onResizeStart(event, direction)}/>)}
   </DisplayWidget>;
 }

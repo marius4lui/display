@@ -107,6 +107,19 @@ export default function Builder() {
   const patchDocument = (patch: Partial<DashboardDocument>) => mutateDocument((current) => ({ ...current, ...patch }));
   const patchWidgets = (update: (items: Widget[]) => Widget[]) => mutateDocument((current) => ({ ...current, pages: current.pages.map((page) => page.id === activePageId ? { ...page, widgets: update(page.widgets) } : page) }));
   const patchWidget = (patch: Partial<Widget>) => patchWidgets((items) => items.map((item) => item.id === selectedId ? { ...item, ...patch } : item));
+  const fillSelectedWidget = () => {
+    if (!selected) return;
+    if (activePage.widgets.some((item) => item.id !== selected.id)) {
+      setNotice({ kind: "error", text: "Vollbild ist nur möglich, wenn das Widget allein auf der Seite liegt." });
+      return;
+    }
+    mutateDocument((current) => ({
+      ...current,
+      pages: current.pages.map((page) => page.id === activePageId ? { ...page, widgets: page.widgets.map((item) => item.id === selected.id ? { ...item, x: 0, y: 0, width: current.settings.columns, height: current.settings.rows } : item) } : page),
+      pageNavigation: { ...current.pageNavigation, visible: false },
+    }));
+    setNotice({ kind: "ok", text: "Widget füllt jetzt den ganzen Bildschirm aus." });
+  };
   const patchSource = (id: string, patch: Partial<DataSource>) => mutateDocument((current) => ({ ...current, dataSources: current.dataSources.map((source) => source.id === id ? { ...source, ...patch } as DataSource : source) }));
 
   const applyDocument = (next: DashboardDocument, markDirty = true) => {
@@ -447,7 +460,7 @@ export default function Builder() {
         onResizeStart={startResize} onSwitchPage={switchPage}/>
       {rightOpen && <Inspector document={document} page={activePage} selected={selected} onPatch={patchWidget}
         onDelete={() => { if (!selected || !confirm(`Widget „${selected.title}“ löschen?`)) return; patchWidgets((items) => items.filter((item) => item.id !== selected.id)); setSelectedId(""); }}
-        onDuplicate={duplicateWidget} onNotice={(text) => setNotice({ kind: "error", text })} onOpenData={() => openApi(selected?.dataSourceId)}/>}
+        onDuplicate={duplicateWidget} onFillPage={fillSelectedWidget} onNotice={(text) => setNotice({ kind: "error", text })} onOpenData={() => openApi(selected?.dataSourceId)}/>}
     </section>}
   </main>;
 }
