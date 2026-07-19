@@ -109,6 +109,15 @@ class DashboardController(context: Context) {
 
     fun reset() { job?.cancel(); store.clear(); configured = false; dashboard = null; values.clear(); status = "Nicht verbunden" }
 
+    fun resolvePlayerUrl(value: String): String {
+        if (value.startsWith("https://") || value.startsWith("http://")) return value
+        val configuredUrl = store.url() ?: return value
+        return runCatching {
+            val base = URL(configuredUrl)
+            "${base.protocol}://${base.authority}/${value.trimStart('/')}"
+        }.getOrDefault(value)
+    }
+
     private fun loadCached() {
         val cached = store.cachedDocument() ?: return
         runCatching {

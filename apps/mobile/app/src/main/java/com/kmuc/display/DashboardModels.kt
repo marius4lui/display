@@ -19,6 +19,8 @@ data class WidgetStyle(
     val foreground: String = "#f6f7fb",
     val accent: String = "#7c5cff",
     val align: String = "left",
+    val verticalAlign: String = "center",
+    val fontScale: Int = 100,
 )
 
 data class DashboardWidget(
@@ -130,7 +132,14 @@ fun parseDashboardDocument(json: String): DashboardDocument {
                 maxItems = item.optInt("maxItems", 5), chartType = item.optionalString("chartType"), historyDays = item.optInt("historyDays", 1),
                 statusMap = item.optJSONObject("statusMap"), conditionalRules = item.optJSONArray("conditionalRules"),
                 animation = item.optString("animation", "none"), errorBehavior = item.optString("errorBehavior", "stale"),
-                style = WidgetStyle(styleJson.optString("background", "#151b2b"), styleJson.optString("foreground", "#f6f7fb"), styleJson.optString("accent", "#7c5cff"), styleJson.optString("align", "left")),
+                style = WidgetStyle(
+                    styleJson.optString("background", "#151b2b"),
+                    styleJson.optString("foreground", "#f6f7fb"),
+                    styleJson.optString("accent", "#7c5cff"),
+                    styleJson.optString("align", "left"),
+                    styleJson.optString("verticalAlign", "center"),
+                    styleJson.optInt("fontScale", 100).coerceIn(25, 300),
+                ),
             ))
         }
     }
