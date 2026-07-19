@@ -145,6 +145,7 @@ before(async () => {
       ...process.env,
       PUBLIC_APP_URL: `http://studio.localhost:${port}`,
       PUBLIC_DISPLAY_URL: `http://display.localhost:${port}`,
+      ANDROID_APK_URL: "https://downloads.example.com/display.apk",
       SUPABASE_URL: "http://127.0.0.1:32188",
       SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
     },
@@ -175,7 +176,7 @@ test("Display-Host liefert nur den Player", async () => {
   assert.match(player.body, /Web Player/);
   const download = await request("/download/android", `display.localhost:${port}`);
   assert.equal(download.status, 307);
-  assert.equal(download.headers.location, "https://github.com/marius4lui/display/releases/latest/download/display.apk");
+  assert.equal(download.headers.location, "https://downloads.example.com/display.apk");
 
   const studioApi = await request("/api/auth/session", `display.localhost:${port}`);
   assert.equal(studioApi.status, 404);

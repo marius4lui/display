@@ -655,7 +655,7 @@ svg { width: 18px; height: 18px; }
 .widget-list li { display: flex; justify-content: space-between; gap: clamp(4px, 3cqw, 16px); padding-bottom: clamp(2px, 1.5cqh, 8px); border-bottom: 1px solid #ffffff14; }
 .widget-list span { opacity: .65; }
 .widget-gauge { position: relative; display: grid; width: min(75%, 70cqw, 70cqh); margin: auto; aspect-ratio: 1; place-items: center; border-radius: 50%; }
-.widget-gauge::before { position: absolute; inset: 15%; border-radius: 50%; background: #151b2b; content: ""; }
+.widget-gauge::before { position: absolute; inset: 15%; border-radius: 50%; background: var(--widget-gauge-inner, #151b2b); content: ""; }
 .widget-gauge span { position: relative; font-size: clamp(calc(9px * var(--widget-font-scale, 1)), min(calc(7cqw * var(--widget-font-scale, 1)), calc(12cqh * var(--widget-font-scale, 1))), calc(48px * var(--widget-font-scale, 1))); }
 .widget-chart { width: 100%; height: 100%; min-height: 30px; }
 .animation-pulse .widget-value { animation: pulse 2s infinite; }

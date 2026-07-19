@@ -10,10 +10,10 @@ services:
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      # Public canonical origin used in dashboard, asset, and QR-pairing URLs.
-      # Local .env files can override this with http://localhost:3000.
-      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://display.qhrd.online}
-      PUBLIC_DISPLAY_URL: ${PUBLIC_DISPLAY_URL:-https://dis.bz3.eu}
+      # Set both origins explicitly in .env. They must point to this instance.
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:?PUBLIC_APP_URL must be set}
+      PUBLIC_DISPLAY_URL: ${PUBLIC_DISPLAY_URL:?PUBLIC_DISPLAY_URL must be set}
+      ANDROID_APK_URL: ${ANDROID_APK_URL:-}
       SECRET_STORE_MASTER_KEY: ${SECRET_STORE_MASTER_KEY}
       COLLECTOR_TOKEN: ${COLLECTOR_TOKEN}
     ports:

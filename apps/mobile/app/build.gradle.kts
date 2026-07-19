@@ -8,6 +8,9 @@ val releaseStorePassword = providers.environmentVariable("DISPLAY_SIGNING_STORE_
 val releaseKeyAlias = providers.environmentVariable("DISPLAY_SIGNING_KEY_ALIAS").orNull
 val releaseKeyPassword = providers.environmentVariable("DISPLAY_SIGNING_KEY_PASSWORD").orNull
 val hasReleaseSigning = listOf(releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }
+val releasesApiUrl = providers.environmentVariable("DISPLAY_RELEASES_API_URL").orElse("https://example.invalid/releases/latest").get()
+val productionApiUrl = providers.environmentVariable("DISPLAY_API_URL").orElse("https://studio.example.com").get()
+fun quoted(value: String) = "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 android {
     namespace = "com.kmuc.display"
@@ -19,7 +22,7 @@ android {
         targetSdk = 35
         versionCode = 3
         versionName = "0.2.0"
-        buildConfigField("String", "RELEASES_API_URL", "\"https://api.github.com/repos/marius4lui/display/releases/latest\"")
+        buildConfigField("String", "RELEASES_API_URL", quoted(releasesApiUrl))
     }
 
     buildFeatures {
@@ -43,7 +46,7 @@ android {
         release {
             isMinifyEnabled = false
             if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
-            buildConfigField("String", "API_URL", "\"https://display.qhrd.online\"")
+            buildConfigField("String", "API_URL", quoted(productionApiUrl))
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
