@@ -23,6 +23,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -41,6 +42,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -78,10 +80,13 @@ import java.util.Date
 
 class MainActivity : ComponentActivity() {
     private lateinit var controller: DashboardController
+    private lateinit var updater: AppUpdater
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         controller = DashboardController(applicationContext)
+        updater = AppUpdater(this)
+        updater.check(lifecycleScope)
         handleConnectionIntent(intent)
         enterFullscreen()
         setContent {
@@ -89,6 +94,7 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 DisposableEffect(Unit) { controller.start(scope); onDispose { } }
                 Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF090B12)) {
+                    Box(Modifier.fillMaxSize()) {
                     if (controller.configured) DashboardScreen(controller) else SetupScreen(
                         status = controller.status,
                         onBrowserConnect = { url ->
@@ -98,9 +104,16 @@ class MainActivity : ComponentActivity() {
                         },
                         onCodeConnect = { url, code -> controller.connectWithCode(url, code, null, null, scope) },
                     )
+                    UpdateUi(updater, lifecycleScope)
+                    }
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::updater.isInitialized) updater.onResume(lifecycleScope)
     }
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handleConnectionIntent(intent) }
@@ -136,6 +149,33 @@ class MainActivity : ComponentActivity() {
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
+    }
+}
+
+@Composable
+private fun BoxScope.UpdateUi(updater: AppUpdater, scope: kotlinx.coroutines.CoroutineScope) {
+    val latest = updater.update ?: return
+    if (updater.promptVisible) AlertDialog(
+        onDismissRequest = updater::skip,
+        title = { Text("Update ${latest.version} verfügbar") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Das Update wird empfohlen. Du kannst die Installationsfreigabe erteilen oder die APK manuell herunterladen.")
+            if (latest.notes.isNotBlank()) Text(latest.notes, color = Color(0xFFA7ABBA), fontSize = 12.sp, maxLines = 5, overflow = TextOverflow.Ellipsis)
+            updater.message?.let { Text(it, color = Color(0xFFC6B9FF), fontSize = 12.sp) }
+        } },
+        confirmButton = { Button(enabled = !updater.busy, onClick = { updater.install(scope) }) { Text(if (updater.busy) "Lädt …" else "Update installieren") } },
+        dismissButton = { Row {
+            TextButton(onClick = updater::manualDownload) { Text("APK herunterladen") }
+            TextButton(onClick = updater::skip) { Text("Später") }
+        } },
+    )
+    if (updater.skipped) Row(
+        Modifier.align(Alignment.BottomCenter).padding(10.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xEE24293A)).clickable(onClick = updater::showPrompt).padding(horizontal = 14.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Update ${latest.version} empfohlen", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text("Öffnen", color = Color(0xFFC6B9FF), fontSize = 11.sp)
     }
 }
 

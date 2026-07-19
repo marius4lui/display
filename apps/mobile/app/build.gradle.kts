@@ -14,6 +14,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("String", "RELEASES_API_URL", "\"https://api.github.com/repos/marius4lui/display/releases/latest\"")
     }
 
     buildFeatures {
@@ -27,7 +28,7 @@ android {
         }
         release {
             isMinifyEnabled = false
-            buildConfigField("String", "API_URL", "\"https://display.invalid\"")
+            buildConfigField("String", "API_URL", "\"https://display.qhrd.online\"")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

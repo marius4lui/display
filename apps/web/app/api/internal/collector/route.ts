@@ -3,6 +3,7 @@ import type { DataSource } from "../../../../lib/dashboard";
 import { executeDataSource } from "../../../../lib/server/data-source";
 import { apiError } from "../../../../lib/server/http";
 import { adminClient } from "../../../../lib/server/supabase";
+import { executeHomeAssistantSource, executeN8nSource, ownedIntegration } from "../../../../lib/server/integrations";
 
 export const runtime = "nodejs";
 export async function POST(request: NextRequest) {
@@ -15,9 +16,25 @@ export async function POST(request: NextRequest) {
   for (const job of jobs ?? []) {
     const checkedAt = new Date().toISOString();
     try {
-      const result = await executeDataSource(job.source as DataSource, job.owner_id, database);
-      await database.from("data_source_runtime").update({ value: result.value, checked_at: checkedAt, succeeded_at: checkedAt, duration_ms: result.durationMs, http_status: result.status, error: null, lease_until: null }).eq("display_id", job.display_id).eq("source_id", job.source_id);
-      await database.from("data_source_samples").insert({ display_id: job.display_id, source_id: job.source_id, sampled_at: checkedAt, value: result.value });
+      const source = job.source as DataSource;
+      if (source.type === "action_response") {
+        await database.from("data_source_runtime").update({ checked_at: checkedAt, lease_until: null }).eq("display_id", job.display_id).eq("source_id", job.source_id);
+        continue;
+      }
+      let value: unknown; let durationMs: number | null = null; let httpStatus: number | null = null;
+      if (source.type === "home_assistant" || source.type === "n8n") {
+        const integration = await ownedIntegration(database, job.owner_id, source.integrationId);
+        if (!integration || integration.status !== "active" || integration.provider !== source.type) throw new Error("Integration ist nicht aktiv");
+        const started = performance.now();
+        const managed = source.type === "home_assistant" ? await executeHomeAssistantSource(integration, source) : await executeN8nSource(integration, source);
+        if ("image" in managed) throw new Error("Binäre Kameraquellen werden nicht historisiert");
+        value = managed.value; durationMs = Math.round(performance.now() - started); httpStatus = 200;
+      } else {
+        const result = await executeDataSource(source, job.owner_id, database);
+        value = result.value; durationMs = result.durationMs; httpStatus = result.status;
+      }
+      await database.from("data_source_runtime").update({ value, checked_at: checkedAt, succeeded_at: checkedAt, duration_ms: durationMs, http_status: httpStatus, error: null, lease_until: null }).eq("display_id", job.display_id).eq("source_id", job.source_id);
+      await database.from("data_source_samples").insert({ display_id: job.display_id, source_id: job.source_id, sampled_at: checkedAt, value });
       succeeded++;
     } catch (failure) {
       const item = failure as Error & { status?: number };
@@ -27,4 +44,3 @@ export async function POST(request: NextRequest) {
   await database.from("data_source_samples").delete().lt("sampled_at", new Date(Date.now() - 7 * 86400_000).toISOString());
   return NextResponse.json({ claimed: jobs?.length ?? 0, succeeded });
 }
-

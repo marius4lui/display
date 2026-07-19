@@ -99,7 +99,7 @@ fun parsePublishedDashboard(json: String): PublishedDashboard {
 fun parseDashboardDocument(json: String): DashboardDocument {
     val root = JSONObject(json)
     val schemaVersion = root.getInt("schemaVersion")
-    require(schemaVersion in 1..3) { "Dashboard-Schema wird nicht unterstützt" }
+    require(schemaVersion in 1..4) { "Dashboard-Schema wird nicht unterstützt" }
     val settingsJson = root.getJSONObject("settings")
     val settings = DashboardSettings(
         configPollSeconds = settingsJson.optInt("configPollSeconds", 30).coerceAtLeast(10),

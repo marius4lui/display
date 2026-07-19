@@ -17,7 +17,7 @@ export function proxy(request: NextRequest) {
     url.pathname = "/player";
     return NextResponse.rewrite(url);
   }
-  if (path.startsWith("/api/player/") || path.startsWith("/_next/") || path === "/favicon.ico") {
+  if (path.startsWith("/api/player/") || path === "/download/android" || path.startsWith("/_next/") || path === "/favicon.ico") {
     return NextResponse.next();
   }
   return new NextResponse("Not Found", { status: 404 });

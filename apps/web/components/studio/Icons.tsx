@@ -41,6 +41,7 @@ export function Icon({ name, ...props }: { name: IconName } & SVGProps<SVGSVGEle
 }
 
 const widgetPaths: Record<WidgetType, React.ReactNode> = {
+  button: <><rect x="4" y="7" width="16" height="10" rx="3"/><path d="m10 10 5 2-5 2z"/></>,
   text: <><path d="M5 5h14M12 5v14M8 19h8"/></>,
   clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
   image: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m4 17 5-5 3 3 3-3 5 5"/></>,

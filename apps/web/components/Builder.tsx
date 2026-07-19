@@ -8,6 +8,7 @@ import {
   type Widget, type WidgetType,
 } from "../lib/dashboard";
 import ApiWorkbench from "./ApiWorkbench";
+import IntegrationStudio from "./IntegrationStudio";
 import { CanvasStage, type Placement, type PreviewDevice, type ResizeDirection } from "./studio/CanvasStage";
 import { ActivityRail, ContextPanel, type Activity, type DashboardSummary, type DeviceSummary, type PairingQr, type TemplateEntry, type VersionSummary } from "./studio/ContextPanel";
 import { Inspector } from "./studio/Inspector";
@@ -39,7 +40,7 @@ export default function Builder() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [studioMode, setStudioMode] = useState<"edit" | "preview">("edit");
-  const [workspaceView, setWorkspaceView] = useState<"dashboard" | "api">("dashboard");
+  const [workspaceView, setWorkspaceView] = useState<"dashboard" | "api" | "integrations">("dashboard");
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("display");
   const [apiSourceId, setApiSourceId] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -105,7 +106,7 @@ export default function Builder() {
   const patchDocument = (patch: Partial<DashboardDocument>) => mutateDocument((current) => ({ ...current, ...patch }));
   const patchWidgets = (update: (items: Widget[]) => Widget[]) => mutateDocument((current) => ({ ...current, pages: current.pages.map((page) => page.id === activePageId ? { ...page, widgets: update(page.widgets) } : page) }));
   const patchWidget = (patch: Partial<Widget>) => patchWidgets((items) => items.map((item) => item.id === selectedId ? { ...item, ...patch } : item));
-  const patchSource = (id: string, patch: Partial<DataSource>) => mutateDocument((current) => ({ ...current, dataSources: current.dataSources.map((source) => source.id === id ? { ...source, ...patch } : source) }));
+  const patchSource = (id: string, patch: Partial<DataSource>) => mutateDocument((current) => ({ ...current, dataSources: current.dataSources.map((source) => source.id === id ? { ...source, ...patch } as DataSource : source) }));
 
   const applyDocument = (next: DashboardDocument, markDirty = true) => {
     setDocument(next);
@@ -368,7 +369,7 @@ export default function Builder() {
 
   return <main className="builder-shell">
     <StudioTopbar name={document.name} workspace={workspaceView} status={status} busy={busy} onName={(name) => patchDocument({ name })} onWorkspace={setWorkspaceView} onPreview={() => { setStudioMode("preview"); setWorkspaceView("dashboard"); }} onSave={() => void save(false)} onPublish={() => void save(true)}/>
-    {workspaceView === "api" ? <ApiWorkbench
+    {workspaceView === "integrations" ? <IntegrationStudio document={document} onDocument={patchDocument} onClose={() => setWorkspaceView("dashboard")} onNotice={(text, ok) => setNotice({ kind: ok ? "ok" : "error", text })}/> : workspaceView === "api" ? <ApiWorkbench
       sources={document.dataSources}
       initialSourceId={apiSourceId}
       onAdd={() => { const id = crypto.randomUUID(); patchDocument({ dataSources: [...document.dataSources, { id, name: "Neue API", method: "GET", url: "https://", headers: {}, query: {}, variables: {}, auth: { type: "none" }, refreshSeconds: 60 }] }); return id; }}

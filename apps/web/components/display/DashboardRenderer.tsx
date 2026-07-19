@@ -21,6 +21,7 @@ function Clock() {
 function widgetContent(widget: Widget, raw: unknown, history: unknown[]): ReactNode {
   if (widget.type === "clock") return <Clock />;
   if (widget.type === "image") return widget.imageUrl ? <img src={widget.imageUrl} alt={widget.title} /> : "Bild-URL fehlt";
+  if (widget.type === "button") return <>{widget.icon ? `${widget.icon} ` : ""}{raw ? String(raw) : widget.buttonLabel ?? widget.title}</>;
   if (["value", "metric"].includes(widget.type)) return formatValue(raw, widget.format, widget.suffix);
   if (widget.type === "weather") return <span className="widget-weather"><i>☀</i>{formatValue(raw, widget.format, widget.suffix)}</span>;
   if (widget.type === "status") {
@@ -53,7 +54,7 @@ function widgetContent(widget: Widget, raw: unknown, history: unknown[]): ReactN
   return widget.staticValue ?? widget.title;
 }
 
-export function DisplayWidget({ widget, runtime, className = "", children, articleProps }: { widget: Widget; runtime?: RuntimeState; className?: string; children?: ReactNode; articleProps?: HTMLAttributes<HTMLElement> }) {
+export function DisplayWidget({ widget, runtime, className = "", children, articleProps, onAction }: { widget: Widget; runtime?: RuntimeState; className?: string; children?: ReactNode; articleProps?: HTMLAttributes<HTMLElement>; onAction?: (widget: Widget) => void }) {
   const raw = valueAtPath(runtime?.value, widget.jsonPath);
   const rule = widget.conditionalRules?.find((candidate) => matchesRule(raw, candidate));
   const effective = effectiveWidget(widget, raw);
@@ -64,18 +65,19 @@ export function DisplayWidget({ widget, runtime, className = "", children, artic
   const ruled = rule?.text || rule?.icon ? <>{rule.icon ? `${rule.icon} ` : ""}{rule.text ?? rendered}</> : rendered;
   const content = showError ? runtime?.error : hideValue ? "—" : ruled;
   const fontScale = Math.max(25, Math.min(300, effective.style.fontScale ?? 100)) / 100;
-  return <article {...articleProps} data-widget-type={effective.type} data-vertical-align={effective.style.verticalAlign ?? "center"} className={`canvas-widget animation-${effective.animation ?? "none"}${runtime?.stale ? " is-stale" : ""}${hasError ? " has-error" : ""} ${className}`} style={{ gridColumn: `${effective.x + 1} / span ${effective.width}`, gridRow: `${effective.y + 1} / span ${effective.height}`, background: effective.style.background, color: effective.style.foreground, textAlign: effective.style.align, "--widget-font-scale": fontScale } as CSSProperties}>
+  return <article {...articleProps} role={effective.type === "button" ? "button" : articleProps?.role} tabIndex={effective.type === "button" ? 0 : articleProps?.tabIndex} onClick={effective.type === "button" && onAction ? () => onAction(effective) : articleProps?.onClick} onKeyDown={effective.type === "button" && onAction ? (event) => { if (event.key === "Enter" || event.key === " ") onAction(effective); } : articleProps?.onKeyDown} data-widget-type={effective.type} data-vertical-align={effective.style.verticalAlign ?? "center"} className={`canvas-widget animation-${effective.animation ?? "none"}${runtime?.stale ? " is-stale" : ""}${hasError ? " has-error" : ""} ${className}`} style={{ gridColumn: `${effective.x + 1} / span ${effective.width}`, gridRow: `${effective.y + 1} / span ${effective.height}`, background: effective.style.background, color: effective.style.foreground, textAlign: effective.style.align, "--widget-font-scale": fontScale } as CSSProperties}>
     <small>{effective.title}</small><div className="widget-value">{content}</div>
     {runtime?.stale && <span className="widget-state">Veraltet</span>}
     {children}
   </article>;
 }
 
-export function DashboardRenderer({ document, pageIndex, runtime, onPageChange, className = "" }: {
+export function DashboardRenderer({ document, pageIndex, runtime, onPageChange, onAction, className = "" }: {
   document: DashboardDocument;
   pageIndex: number;
   runtime: Record<string, RuntimeState>;
   onPageChange: (index: number) => void;
+  onAction?: (widget: Widget) => void;
   className?: string;
 }) {
   const swipe = useRef<{ x: number; y: number } | null>(null);
@@ -86,7 +88,7 @@ export function DashboardRenderer({ document, pageIndex, runtime, onPageChange, 
     const dx = event.clientX - start.x, dy = event.clientY - start.y;
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) change(dx < 0 ? 1 : -1);
   }} style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>
-    {page.widgets.map((widget) => <DisplayWidget key={widget.id} widget={widget} runtime={runtime[widget.dataSourceId ?? ""]} />)}
+    {page.widgets.map((widget) => <DisplayWidget key={widget.id} widget={widget} runtime={runtime[widget.type === "button" ? `action:${widget.actionId}` : widget.dataSourceId ?? ""]} onAction={onAction} />)}
     {document.pages.length > 1 && document.pageNavigation.visible && <div className="page-navigation" style={{ gridColumn: `${document.pageNavigation.x + 1} / span ${document.pageNavigation.width}`, gridRow: `${document.pageNavigation.y + 1} / span ${document.pageNavigation.height}`, background: document.pageNavigation.style.background, color: document.pageNavigation.style.foreground }}>
       <button onClick={() => change(-1)} aria-label="Vorherige Seite">‹</button><span>{pageIndex + 1} / {document.pages.length}</span><button onClick={() => change(1)} aria-label="Nächste Seite">›</button>
     </div>}

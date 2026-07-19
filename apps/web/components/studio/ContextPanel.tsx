@@ -21,6 +21,7 @@ const activities: Array<{ id: Activity; label: string }> = [
 ];
 
 const widgetMeta: Record<WidgetType, { label: string; description: string; group: "Inhalt" | "Daten" | "Visualisierung" }> = {
+  button: { label: "Action Button", description: "Führt eine veröffentlichte Integration-Aktion aus.", group: "Inhalt" },
   text: { label: "Text", description: "Überschriften und Hinweise", group: "Inhalt" },
   image: { label: "Bild", description: "Bild aus einer URL", group: "Inhalt" },
   clock: { label: "Uhr", description: "Lokale Zeit anzeigen", group: "Inhalt" },

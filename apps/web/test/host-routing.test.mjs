@@ -64,6 +64,28 @@ before(async () => {
       }) : "{}");
       return;
     }
+    if (request.url === "/rest/v1/rpc/claim_player_action" && request.method === "POST") {
+      response.end('"ok"');
+      return;
+    }
+    if (request.url?.startsWith("/rest/v1/action_audit")) {
+      response.end(request.method === "GET" ? "[]" : "{}");
+      return;
+    }
+    if (request.url?.startsWith("/rest/v1/integrations")) {
+      response.end(JSON.stringify({
+        id: "40000000-0000-4000-8000-000000000004",
+        owner_id: "30000000-0000-4000-8000-000000000003",
+        provider: "n8n",
+        base_url: "https://127.0.0.1",
+        status: "active",
+        credential_ciphertext: null,
+        credential_iv: null,
+        credential_auth_tag: null,
+        metadata: {},
+      }));
+      return;
+    }
     if (request.url?.startsWith("/rest/v1/displays")) {
       response.end(JSON.stringify({
         id: "20000000-0000-4000-8000-000000000002",
@@ -78,7 +100,7 @@ before(async () => {
         version: 1,
         published_at: "2026-07-17T12:00:00.000Z",
         document: {
-          schemaVersion: 3,
+          schemaVersion: 4,
           name: "Test",
           settings: { configPollSeconds: 30, dataPollSeconds: 60, columns: 12, rows: 8, background: "#000", foreground: "#fff" },
           dataSources: [{
@@ -89,6 +111,17 @@ before(async () => {
             headers: { "X-Proxy-Test": "server-side" },
             auth: { type: "bearer", value: "super-secret-token" },
             refreshSeconds: 30,
+          }],
+          actions: [{
+            id: "published-action",
+            name: "Production Webhook",
+            integrationId: "40000000-0000-4000-8000-000000000004",
+            provider: "n8n",
+            operation: "n8n_webhook",
+            target: { webhookPath: "/webhook/live", method: "POST" },
+            confirmation: true,
+            cooldownMs: 2000,
+            timeoutMs: 20000,
           }],
           pages: [{ id: "page", name: "Seite 1", widgets: [] }],
           pageNavigation: { visible: false, x: 4, y: 7, width: 4, height: 1, style: { background: "#111", foreground: "#fff", accent: "#70f", align: "center" } },
@@ -140,6 +173,9 @@ test("Display-Host liefert nur den Player", async () => {
   const player = await request("/", `display.localhost:${port}`);
   assert.equal(player.status, 200);
   assert.match(player.body, /Web Player/);
+  const download = await request("/download/android", `display.localhost:${port}`);
+  assert.equal(download.status, 307);
+  assert.equal(download.headers.location, "https://github.com/marius4lui/display/releases/latest/download/display.apk");
 
   const studioApi = await request("/api/auth/session", `display.localhost:${port}`);
   assert.equal(studioApi.status, 404);
@@ -178,6 +214,7 @@ test("Erfolgreiches Pairing setzt nur das hostgebundene HttpOnly-Token", async (
   assert.equal(config.status, 200);
   assert.match(config.body, /"version":1/);
   assert.doesNotMatch(config.body, /127\.0\.0\.1:32189|super-secret-token|server-side/);
+  assert.doesNotMatch(config.body, /webhook\/live|integrationId|n8n_webhook/);
   assert.ok(config.headers.etag);
   assert.match(config.headers["cache-control"] ?? "", /private, no-store/);
 
@@ -195,6 +232,13 @@ test("Erfolgreiches Pairing setzt nur das hostgebundene HttpOnly-Token", async (
 
   const unknownSource = await request("/api/player/data/not-published", `display.localhost:${port}`, "POST", undefined, { Cookie: cookieHeader });
   assert.equal(unknownSource.status, 404);
+
+  const unknownAction = await request("/api/player/actions/not-published", `display.localhost:${port}`, "POST", undefined, { Cookie: cookieHeader, "X-Player-Config-Version": "1", "Idempotency-Key": "unknown-action" });
+  assert.equal(unknownAction.status, 404);
+
+  const blockedAction = await request("/api/player/actions/published-action", `display.localhost:${port}`, "POST", undefined, { Cookie: cookieHeader, "X-Player-Config-Version": "1", "Idempotency-Key": "action-attempt-1" });
+  assert.equal(blockedAction.status, 502);
+  assert.match(blockedAction.body, /"status":"failed"/);
 
   const heartbeat = await request("/api/player/heartbeat", `display.localhost:${port}`, "POST", JSON.stringify({ appVersion: "web-test", dashboardVersion: 1 }), { Cookie: cookieHeader });
   assert.equal(heartbeat.status, 204);

@@ -13,18 +13,18 @@ export async function GET(request: NextRequest) {
   const { data: version } = await database.from("display_versions").select("version, document, published_at").eq("display_id", display.id).eq("version", display.active_version).maybeSingle();
   if (!version?.document) return apiError("LEGACY_VERSION", "Diese Dashboard-Version wird nicht unterstützt", 409);
   const document = structuredClone(version.document) as DashboardDocument;
+  const cameraSourceIds = new Set(document.dataSources.filter((source) => source.type === "home_assistant" && source.resource === "camera").map((source) => source.id));
   document.dataSources = (document.dataSources ?? []).map((source) => ({
-    ...source,
-    url: "",
-    headers: {},
-    query: {},
-    variables: {},
-    body: undefined,
-    auth: { type: "none" },
-  }));
+    id: source.id, name: source.name, refreshSeconds: source.refreshSeconds,
+    type: source.type ?? "rest", method: "GET", url: "", headers: {}, auth: { type: "none" },
+  })) as DashboardDocument["dataSources"];
+  document.actions = (document.actions ?? []).map((action) => ({
+    id: action.id, name: action.name, confirmation: action.confirmation !== false, cooldownMs: action.cooldownMs ?? 2000,
+  })) as DashboardDocument["actions"];
   const studioOrigin = new URL(process.env.PUBLIC_APP_URL ?? request.url).origin;
   for (const page of document.pages) {
     for (const widget of page.widgets) {
+      if (widget.dataSourceId && cameraSourceIds.has(widget.dataSourceId)) widget.imageUrl = `/api/player/images/${encodeURIComponent(widget.dataSourceId)}`;
       if (!widget.imageUrl) continue;
       try {
         const image = new URL(widget.imageUrl, studioOrigin);

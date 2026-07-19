@@ -570,6 +570,9 @@ svg { width: 18px; height: 18px; }
 .player-card label { color: #cdd1dd; font-size: 12px; }
 .player-code { width: 100%; border: 1px solid #4a5065; border-radius: 12px; padding: 15px; background: #090b12; color: white; text-align: center; font: 700 30px "Space Grotesk", sans-serif; letter-spacing: .28em; }
 .player-code:focus { border-color: #8e7cff; outline: 3px solid #7c5cff30; }
+.player-download { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 7px; padding: 11px 12px; border: 1px solid #343a50; border-radius: 9px; color: #c6b9ff; text-decoration: none; font-size: 11px; font-weight: 700; }
+.player-download:hover { border-color: #7c5cff; background: #1a1e2c; }
+.player-download span { color: var(--muted); font-size: 9px; font-weight: 500; }
 .player-error { color: #ff9bad !important; font-size: 13px; }
 .player-spinner { width: 30px; height: 30px; margin: auto; border: 3px solid #ffffff20; border-top-color: #8e7cff; border-radius: 50%; animation: spin .8s linear infinite; }
 .web-player { position: fixed; inset: 0; display: grid; overflow: hidden; place-items: center; background: #05070b; }
@@ -830,6 +833,37 @@ svg { width: 18px; height: 18px; }
 .secret-list svg { width: 14px; color: #8c7acf; }
 
 /* Auth and shared utility UI */
+.integration-studio { display: grid; height: calc(100vh - 56px); grid-template-columns: 250px minmax(0,1fr); background: #090b12; }
+.integration-sidebar { display: grid; min-height: 0; grid-template-rows: 58px 1fr 54px; border-right: 1px solid var(--line-soft); background: #10131b; }
+.integration-sidebar > header, .integration-sidebar > footer { padding: 12px; border-bottom: 1px solid var(--line-soft); }
+.integration-sidebar > footer { border-top: 1px solid var(--line-soft); border-bottom: 0; }
+.integration-sidebar h2 { margin: 2px 0; font: 600 14px "Space Grotesk"; }
+.integration-list { padding: 10px; overflow: auto; }
+.integration-list > button, .discovery-list > button, .discovery-list > article { display: grid; width: 100%; gap: 2px; margin-bottom: 5px; padding: 9px; border: 1px solid transparent; border-radius: 7px; background: #171b25; color: white; text-align: left; cursor: pointer; }
+.discovery-list article button { padding: 4px 7px; border: 1px solid var(--line); border-radius: 5px; background: #222735; color: white; cursor: pointer; font-size: 9px; }
+.integration-list > button.active { border-color: #7160bd; background: #242039; }
+.integration-list small, .discovery-list small, .configured-row small { color: var(--muted); }
+.integration-workspace { min-width: 0; overflow: auto; }
+.integration-workspace > header { display: flex; height: 58px; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid var(--line-soft); }
+.integration-workspace h1 { margin: 0; font: 600 16px "Space Grotesk"; }
+.integration-workspace > nav { display: flex; gap: 3px; padding: 8px 20px; border-bottom: 1px solid var(--line-soft); }
+.integration-workspace > nav button { padding: 7px 12px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.integration-workspace > nav button.active { background: #242039; color: white; }
+.integration-content { display: grid; max-width: 900px; gap: 12px; padding: 20px; }
+.integration-card { display: grid; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 9px; background: #121620; }
+.integration-card h3 { margin: 0; }
+.integration-card p { margin: 0; color: var(--muted); }
+.button-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.integration-status { padding: 4px 8px; border-radius: 10px; background: #333; font-size: 9px; text-transform: uppercase; }
+.integration-status.active { background: #173b2b; color: #72e2a4; }
+.integration-status.error { background: #3b1b24; color: #ff8ca1; }
+.discovery-list { display: grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap: 7px; margin-top: 10px; }
+.configured-row { display: flex; align-items: center; justify-content: space-between; padding: 8px; border-radius: 7px; background: #0d1017; }
+.configured-row > span { display: grid; }
+.action-card textarea { min-height: 100px; font-family: monospace; }
+
+@media (max-width: 760px) { .integration-studio { display: block; height: auto; min-height: calc(100vh - 89px); } .integration-sidebar { max-height: 250px; } }
+
 .auth-screen { display: grid; min-height: 100vh; place-items: center; padding: 24px; overflow: auto; background: #080a10; }
 .auth-card { display: grid; width: min(410px, 100%); gap: 14px; padding: 28px; border: 1px solid var(--line); border-radius: 12px; background: #121620; box-shadow: 0 24px 70px #0008; }
 .brand { display: flex; align-items: center; gap: 10px; }

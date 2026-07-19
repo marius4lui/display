@@ -17,8 +17,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const document = structuredClone(version.document) as DashboardDocument;
   try {
     document.dataSources = await Promise.all(
-      (document.dataSources ?? []).map((source: DataSource) => resolveDataSourceForClient(source, display.owner_id, admin)),
+      (document.dataSources ?? []).filter((source) => source.type !== "action_response").map(async (source: DataSource) => {
+        if (!source.type || source.type === "rest") return resolveDataSourceForClient(source, display.owner_id, admin);
+        return {
+          id: source.id, name: source.name, type: source.type, method: "POST", url: new URL(`/d/${id}/data/${encodeURIComponent(source.id)}`, request.url).toString(),
+          headers: {}, query: {}, variables: {}, auth: { type: "device" }, refreshSeconds: source.refreshSeconds,
+        } as unknown as DataSource;
+      }),
     );
+    document.actions = (document.actions ?? []).map((action) => ({ id: action.id, name: action.name, confirmation: action.confirmation !== false, cooldownMs: action.cooldownMs ?? 2000 })) as DashboardDocument["actions"];
   } catch (failure) {
     const message = failure instanceof Error ? failure.message : "Datenquellen konnten nicht aufgelöst werden";
     return apiError("SOURCE_CONFIGURATION_ERROR", message, 500);

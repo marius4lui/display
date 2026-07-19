@@ -78,6 +78,11 @@ Account-Routen verwenden sichere HttpOnly-Session-Cookies. Geräte verwenden ein
 | `GET` | `/d/{id}/runtime` | Aktuelle Werte und bis zu sieben Tage Historie |
 | `POST` | `/d/{id}/heartbeat` | Geräteversion und Diagnosezustand melden |
 | `GET/POST/DELETE` | `/api/secrets` | Write-only Secret Store verwalten |
+| `GET/POST/PATCH/DELETE` | `/api/integrations` | n8n-/Home-Assistant-Integrationen verwalten |
+| `POST/GET` | `/api/integrations/{id}/test`, `/discovery` | Verbindung und Provider-Ressourcen prüfen |
+| `POST` | `/api/player/actions/{actionId}` | Veröffentlichte Geräteaktion idempotent ausführen |
+
+Die Einrichtung und Sicherheitsanforderungen stehen in [docs/integrations.md](docs/integrations.md).
 
 ## Prüfungen
 

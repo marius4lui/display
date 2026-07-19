@@ -47,6 +47,12 @@ export function Inspector({ document, page, selected, onPatch, onDelete, onDupli
         {selected.type === "text" && <label>Text<textarea value={selected.staticValue ?? ""} onChange={(event) => onPatch({ staticValue: event.target.value })}/></label>}
         {selected.type === "image" && <label>Bild-URL<input value={selected.imageUrl ?? ""} onChange={(event) => onPatch({ imageUrl: event.target.value })}/></label>}
         {selected.type === "clock" && <p className="section-note">Die Uhr verwendet automatisch die lokale Gerätezeit.</p>}
+        {selected.type === "button" && <>
+          <label>Beschriftung<input value={selected.buttonLabel ?? ""} onChange={(event) => onPatch({ buttonLabel: event.target.value })}/></label>
+          <label>Icon<input value={selected.icon ?? ""} maxLength={16} onChange={(event) => onPatch({ icon: event.target.value })}/></label>
+          <label>Veröffentlichte Aktion<select value={selected.actionId ?? ""} onChange={(event) => onPatch({ actionId: event.target.value })}><option value="">Auswählen …</option>{document.actions.map((action) => <option key={action.id} value={action.id}>{action.name}</option>)}</select></label>
+          {!document.actions.length && <p className="section-note">Lege zuerst eine Integration-Aktion im Dashboard-Dokument an.</p>}
+        </>}
         {dataWidget && <p className="section-note">Der angezeigte Inhalt kommt aus der verknüpften Datenquelle.</p>}
       </section>
 

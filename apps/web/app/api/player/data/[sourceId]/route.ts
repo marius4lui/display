@@ -3,6 +3,7 @@ import type { DashboardDocument, DataSource } from "../../../../../lib/dashboard
 import { executeDataSource } from "../../../../../lib/server/data-source";
 import { apiError } from "../../../../../lib/server/http";
 import { playerDevice, requireDisplayHost } from "../../../../../lib/server/player";
+import { executeHomeAssistantSource, executeN8nSource, ownedIntegration } from "../../../../../lib/server/integrations";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!source) return apiError("SOURCE_NOT_FOUND", "Datenquelle nicht gefunden", 404);
 
   try {
+    if (source.type === "action_response") return apiError("ACTION_REQUIRED", "Diese Datenquelle wird nur durch ihre Action aktualisiert", 409);
+    if (source.type === "home_assistant") {
+      const integration = await ownedIntegration(database, display.owner_id, source.integrationId);
+      if (!integration || integration.provider !== "home_assistant" || integration.status !== "active") return apiError("INTEGRATION_UNAVAILABLE", "Home Assistant ist nicht aktiv", 409);
+      const result = await executeHomeAssistantSource(integration, source);
+      if ("image" in result && result.image) return new NextResponse(Buffer.from(result.image), { headers: { "Content-Type": result.contentType ?? "image/jpeg", "Cache-Control": "private, no-store" } });
+      return NextResponse.json({ value: result.value, checkedAt: new Date().toISOString() }, { headers: { "Cache-Control": "private, no-store" } });
+    }
+    if (source.type === "n8n") {
+      const integration = await ownedIntegration(database, display.owner_id, source.integrationId);
+      if (!integration || integration.provider !== "n8n" || integration.status !== "active") return apiError("INTEGRATION_UNAVAILABLE", "n8n ist nicht aktiv", 409);
+      const result = await executeN8nSource(integration, source);
+      return NextResponse.json({ value: result.value, checkedAt: new Date().toISOString() }, { headers: { "Cache-Control": "private, no-store" } });
+    }
     const result = await executeDataSource(source, display.owner_id, database);
     return NextResponse.json({
       value: result.value,

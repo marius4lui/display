@@ -1,11 +1,12 @@
-export type WidgetType = "text" | "clock" | "image" | "value" | "weather" | "metric" | "status" | "list" | "chart" | "gauge";
+export type WidgetType = "text" | "clock" | "image" | "value" | "weather" | "metric" | "status" | "list" | "chart" | "gauge" | "button";
 export type ErrorBehavior = "stale" | "empty" | "error";
 export type RuleOperator = ">" | ">=" | "<" | "<=" | "=" | "!=" | "contains" | "exists";
 export interface ConditionalRule {
   operator: RuleOperator; value?: string; background?: string; foreground?: string; accent?: string; text?: string; icon?: string;
 }
 
-export interface DataSource {
+export interface RestDataSource {
+  type?: "rest";
   id: string;
   name: string;
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -16,6 +17,50 @@ export interface DataSource {
   body?: string;
   auth: { type: "none" | "apiKey" | "bearer" | "basic"; name?: string; value?: string; username?: string; password?: string };
   refreshSeconds?: number;
+}
+export interface HomeAssistantDataSource extends Omit<RestDataSource, "type"> {
+  type: "home_assistant";
+  integrationId: string;
+  resource: "states" | "history" | "logbook" | "calendars" | "calendar_events" | "camera" | "service_response";
+  entityIds?: string[];
+  entityId?: string;
+  calendarId?: string;
+  start?: string;
+  end?: string;
+  attribute?: string;
+  service?: { domain: string; service: string; target?: ActionTarget; data?: Record<string, unknown> };
+  refreshSeconds?: number;
+}
+export interface N8nDataSource extends Omit<RestDataSource, "type"> {
+  type: "n8n";
+  integrationId: string;
+  resource: "executions" | "workflow_status";
+  workflowId?: string;
+}
+export interface ActionResponseDataSource extends Omit<RestDataSource, "type"> {
+  type: "action_response";
+  actionId: string;
+}
+export type DataSource = RestDataSource | HomeAssistantDataSource | N8nDataSource | ActionResponseDataSource;
+
+export interface ActionTarget {
+  entityId?: string[];
+  deviceId?: string[];
+  areaId?: string[];
+}
+export interface DashboardAction {
+  id: string;
+  name: string;
+  integrationId: string;
+  provider: "n8n" | "home_assistant";
+  operation: "n8n_webhook" | "home_assistant_service";
+  target: { webhookPath?: string; method?: "GET" | "POST" | "PUT" | "PATCH"; domain?: string; service?: string; selection?: ActionTarget };
+  payload?: Record<string, unknown>;
+  confirmation?: boolean;
+  cooldownMs?: number;
+  timeoutMs?: number;
+  useResponseMessage?: boolean;
+  responseSourceId?: string;
 }
 
 export interface Widget {
@@ -40,6 +85,9 @@ export interface Widget {
   chartType?: "line" | "bar" | "sparkline";
   historyDays?: number;
   statusMap?: Record<string, { text: string; icon?: string; color?: string }>;
+  actionId?: string;
+  buttonLabel?: string;
+  icon?: string;
   conditionalRules?: ConditionalRule[];
   animation?: "none" | "pulse" | "float" | "glow";
   errorBehavior: ErrorBehavior;
@@ -69,7 +117,7 @@ export interface PageNavigation {
 }
 
 export interface DashboardDocument {
-  schemaVersion: 3;
+  schemaVersion: 4;
   name: string;
   settings: {
     configPollSeconds: number;
@@ -80,14 +128,14 @@ export interface DashboardDocument {
     foreground: string;
   };
   dataSources: DataSource[];
+  actions: DashboardAction[];
   pages: DashboardPage[];
   pageNavigation: PageNavigation;
 }
 
-export interface LegacyDashboardDocument extends Omit<DashboardDocument, "schemaVersion" | "pages" | "pageNavigation"> {
-  schemaVersion: 1 | 2;
-  widgets: Widget[];
-}
+export type LegacyDashboardDocument =
+  | (Omit<DashboardDocument, "schemaVersion" | "actions"> & { schemaVersion: 3 })
+  | (Omit<DashboardDocument, "schemaVersion" | "pages" | "pageNavigation" | "actions"> & { schemaVersion: 1 | 2; widgets: Widget[] });
 
 const widget = (type: WidgetType, title: string, x: number, y: number, width: number, height: number): Widget => ({
   id: crypto.randomUUID(), type, title, x, y, width, height, errorBehavior: "stale", animation: "none",
@@ -95,10 +143,11 @@ const widget = (type: WidgetType, title: string, x: number, y: number, width: nu
 });
 
 export const blankDashboard = (): DashboardDocument => ({
-  schemaVersion: 3,
+  schemaVersion: 4,
   name: "Mein Dashboard",
   settings: { configPollSeconds: 30, dataPollSeconds: 300, columns: 12, rows: 8, background: "#090b12", foreground: "#f6f7fb" },
   dataSources: [],
+  actions: [],
   pages: [{ id: crypto.randomUUID(), name: "Seite 1", widgets: [
       { ...widget("text", "Willkommen", 0, 0, 7, 3), staticValue: "Alles auf einen Blick." },
       { ...widget("clock", "Uhrzeit", 7, 0, 5, 3), style: { background: "#7c5cff", foreground: "#ffffff", accent: "#b8a9ff", align: "center" } },
@@ -126,12 +175,14 @@ export function addDefaultWeatherWidgets(document: DashboardDocument): Dashboard
 }
 
 export function normalizeDashboard(input: DashboardDocument | LegacyDashboardDocument): DashboardDocument {
-  if (input.schemaVersion === 3) return input;
-  if (input.schemaVersion === 2) return { ...(input as unknown as DashboardDocument), schemaVersion: 3 };
+  if (input.schemaVersion === 4) return input;
+  if (input.schemaVersion === 3) return { ...input, schemaVersion: 4, actions: [] };
+  if (input.schemaVersion === 2) return { ...(input as unknown as DashboardDocument), schemaVersion: 4, actions: [] };
   const { widgets, ...rest } = input;
   return {
     ...rest,
-    schemaVersion: 3,
+    schemaVersion: 4,
+    actions: [],
     pages: [{ id: crypto.randomUUID(), name: "Seite 1", widgets }],
     pageNavigation: { visible: true, x: 4, y: 7, width: 4, height: 1, style: { background: "#151b2b", foreground: "#f6f7fb", accent: "#7c5cff", align: "center" } },
   };
@@ -156,6 +207,7 @@ export function createWidget(type: WidgetType, index: number): Widget {
     list: { title: "Liste", jsonPath: "items", listTitlePath: "name", listSubtitlePath: "value", maxItems: 5 },
     chart: { title: "Verlauf", jsonPath: "value", chartType: "line", historyDays: 1 },
     gauge: { title: "Auslastung", jsonPath: "value", format: "number", suffix: "%", min: 0, max: 100 },
+    button: { title: "Aktion", buttonLabel: "Ausführen", icon: "▶", errorBehavior: "error" },
   };
   return { ...widget(type, defaults[type].title ?? type, (index * 3) % 9, Math.floor(index / 3) * 2, type === "text" ? 6 : 4, 2), ...defaults[type] };
 }

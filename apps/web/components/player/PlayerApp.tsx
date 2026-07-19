@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { DashboardRenderer, type RuntimeState } from "../display/DashboardRenderer";
-import type { DashboardDocument, DataSource } from "../../lib/dashboard";
+import type { DashboardDocument, DataSource, Widget } from "../../lib/dashboard";
 import { createSilkKeepAwake, isSilkUserAgent, type SilkKeepAwake } from "../../lib/client/silkKeepAwake";
 
 type PlayerConfig = { id: string; version: number; publishedAt: string; document: DashboardDocument };
@@ -86,6 +86,7 @@ export default function PlayerApp() {
   const lastSync = useRef<string | null>(null);
   const lastData = useRef<string | null>(null);
   const lastError = useRef<string | null>(null);
+  const actionLocks = useRef<Record<string, number>>({});
 
   const updateRuntime = useCallback((sourceId: string, state: RuntimeState) => {
     setRuntime((current) => {
@@ -223,7 +224,7 @@ export default function PlayerApp() {
         updateRuntime(source.id, { error: message, stale: true, checkedAt: new Date().toISOString() });
       } finally { clearTimeout(timeout); controllers.delete(controller); }
     };
-    const timers = config.document.dataSources.map((source) => {
+    const timers = config.document.dataSources.filter((source) => source.type !== "action_response").map((source) => {
       void run(source);
       return window.setInterval(() => void run(source), Math.max(10, source.refreshSeconds ?? config.document.settings.dataPollSeconds) * 1000);
     });
@@ -255,6 +256,30 @@ export default function PlayerApp() {
       setConfig(null); configRef.current = null; setRuntime({}); runtimeRef.current = {}; setPaired(false); setMenu(false);
     } catch { setNotice("Die Verbindung konnte nicht getrennt werden. Bitte Netzwerk prüfen."); window.setTimeout(() => setNotice(""), 3500); }
   }
+  async function runAction(widget: Widget) {
+    const action = configRef.current?.document.actions?.find((item) => item.id === widget.actionId);
+    if (!action || !configRef.current) return;
+    if ((actionLocks.current[action.id] ?? 0) > Date.now()) return;
+    if (action.confirmation !== false && !window.confirm(`${action.name} ausführen?`)) return;
+    const cooldownMs = Math.max(0, action.cooldownMs ?? 2000);
+    actionLocks.current[action.id] = Date.now() + cooldownMs;
+    const stateKey = `action:${action.id}`; const idempotencyKey = crypto.randomUUID();
+    updateRuntime(stateKey, { value: "Wird ausgeführt …", stale: false });
+    try {
+      const response = await fetch(`/api/player/actions/${encodeURIComponent(action.id)}`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey, "X-Player-Config-Version": String(configRef.current.version) } });
+      const result = await response.json() as { status?: string; message?: string; refreshSourceIds?: string[]; responseSourceId?: string; responseValue?: unknown; error?: { message?: string } };
+      if (!response.ok) throw new Error(result.status === "rate_limited" ? "Bitte kurz warten." : result.error?.message ?? "Aktion fehlgeschlagen.");
+      updateRuntime(stateKey, { value: result.message ?? "Erfolgreich", error: undefined });
+      if (result.responseSourceId) updateRuntime(result.responseSourceId, { value: result.responseValue, stale: false, error: undefined, checkedAt: new Date().toISOString(), succeededAt: new Date().toISOString() });
+      if (result.refreshSourceIds?.length) setConfigEpoch((epoch) => epoch + 1);
+    } catch (error) { updateRuntime(stateKey, { error: error instanceof Error ? error.message : "Aktion fehlgeschlagen" }); }
+    finally {
+      window.setTimeout(() => {
+        delete actionLocks.current[action.id];
+        updateRuntime(stateKey, { value: undefined, error: undefined });
+      }, Math.max(0, actionLocks.current[action.id] - Date.now()));
+    }
+  }
   async function fullscreen() {
     const keepAwakePromise = silkKeepAwake.current?.activate();
     try {
@@ -268,10 +293,10 @@ export default function PlayerApp() {
 
   if (startupError && !config) return <main className="player-pair"><div className="player-card"><div className="brand"><span className="brand-mark">d</span><div><strong>display</strong><small>Web Player</small></div></div><h1>Player nicht erreichbar</h1><p>{startupError}</p><button className="primary-button full" onClick={() => { setStartupError(""); void loadConfig(true); }}>Erneut versuchen</button></div></main>;
   if (paired === null) return <main className="player-pair"><div className="player-card"><span className="player-spinner" /><p>Player wird geladen …</p></div></main>;
-  if (!paired || !config) return <main className="player-pair"><form className="player-card" onSubmit={pair}><div className="brand"><span className="brand-mark">d</span><div><strong>display</strong><small>Web Player</small></div></div><h1>Display verbinden</h1><p>Gib den sechsstelligen Code aus der Geräteverwaltung im Studio ein.</p><label htmlFor="pair-code">Kopplungscode</label><input id="pair-code" className="player-code" inputMode="numeric" autoComplete="one-time-code" autoFocus maxLength={6} pattern="[0-9]{6}" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" />{pairError && <p className="player-error" role="alert">{pairError}</p>}<button className="primary-button full" disabled={code.length !== 6}>Verbinden</button></form></main>;
+  if (!paired || !config) return <main className="player-pair"><form className="player-card" onSubmit={pair}><div className="brand"><span className="brand-mark">d</span><div><strong>display</strong><small>Web Player</small></div></div><h1>Display verbinden</h1><p>Gib den sechsstelligen Code aus der Geräteverwaltung im Studio ein.</p><label htmlFor="pair-code">Kopplungscode</label><input id="pair-code" className="player-code" inputMode="numeric" autoComplete="one-time-code" autoFocus maxLength={6} pattern="[0-9]{6}" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" />{pairError && <p className="player-error" role="alert">{pairError}</p>}<button className="primary-button full" disabled={code.length !== 6}>Verbinden</button><a className="player-download" href="/download/android">Android-App herunterladen <span>Neueste Version · APK</span></a></form></main>;
 
   return <main className="web-player">
-    <div className="player-artboard"><DashboardRenderer key={`${config.id}:${config.version}:${configEpoch}`} document={config.document} pageIndex={page} runtime={runtime} onPageChange={setPage} /></div>
+    <div className="player-artboard"><DashboardRenderer key={`${config.id}:${config.version}:${configEpoch}`} document={config.document} pageIndex={page} runtime={runtime} onPageChange={setPage} onAction={(widget) => void runAction(widget)} /></div>
     <button className="player-menu-hotspot" aria-label="Player-Menü öffnen" onClick={() => setMenu(true)} />
     {!isFullscreen && <button className="player-fullscreen-button" onClick={() => void fullscreen()}>Vollbild aktivieren</button>}
     {(offline || syncError || Object.values(runtime).some((state) => state.stale)) && <div className="player-status">{offline ? "Offline · letzter Stand" : syncError ? `Synchronisation: ${syncError}` : "Daten teilweise veraltet"}</div>}

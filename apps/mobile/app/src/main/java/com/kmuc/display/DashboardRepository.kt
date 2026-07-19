@@ -183,6 +183,7 @@ class DashboardController(context: Context) {
         connection.connectTimeout = 10_000; connection.readTimeout = 15_000
         source.headers.forEach(connection::setRequestProperty)
         when (source.auth.type) {
+            "device" -> connection.setRequestProperty("Authorization", "Bearer ${store.deviceToken().orEmpty()}")
             "bearer" -> connection.setRequestProperty("Authorization", "Bearer ${source.auth.value.orEmpty()}")
             "apiKey" -> connection.setRequestProperty(source.auth.name ?: "X-API-Key", source.auth.value.orEmpty())
             "basic" -> connection.setRequestProperty("Authorization", "Basic ${Base64.getEncoder().encodeToString("${source.auth.username.orEmpty()}:${source.auth.password.orEmpty()}".toByteArray())}")
