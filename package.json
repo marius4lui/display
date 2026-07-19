@@ -22,7 +22,7 @@
     "mobile:release": "cd apps/mobile && ./gradlew assembleRelease"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.3",
     "postcss": "^8.5.10"
   },
   "engines": {
