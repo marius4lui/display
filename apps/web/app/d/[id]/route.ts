@@ -21,7 +21,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         if (!source.type || source.type === "rest") return resolveDataSourceForClient(source, display.owner_id, admin);
         return {
           id: source.id, name: source.name, type: source.type, method: "POST", url: new URL(`/d/${id}/data/${encodeURIComponent(source.id)}`, request.url).toString(),
-          headers: {}, query: {}, variables: {}, auth: { type: "device" }, refreshSeconds: source.refreshSeconds,
+          headers: {}, query: {}, variables: {}, auth: { type: "device" }, refreshSeconds: source.type === "immich" ? Math.min(source.refreshSeconds ?? 30, 30) : source.refreshSeconds,
         } as unknown as DataSource;
       }),
     );

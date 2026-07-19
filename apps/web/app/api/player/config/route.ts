@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   const document = structuredClone(version.document) as DashboardDocument;
   const cameraSourceIds = new Set(document.dataSources.filter((source) => source.type === "home_assistant" && source.resource === "camera").map((source) => source.id));
   document.dataSources = (document.dataSources ?? []).map((source) => ({
-    id: source.id, name: source.name, refreshSeconds: source.refreshSeconds,
+    id: source.id, name: source.name, refreshSeconds: source.type === "immich" ? Math.min(source.refreshSeconds ?? 30, 30) : source.refreshSeconds,
     type: source.type ?? "rest", method: "GET", url: "", headers: {}, auth: { type: "none" },
   })) as DashboardDocument["dataSources"];
   document.actions = (document.actions ?? []).map((action) => ({

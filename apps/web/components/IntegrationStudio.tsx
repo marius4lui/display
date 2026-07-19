@@ -105,7 +105,7 @@ export default function IntegrationStudio({ document, onDocument, onClose, onNot
   }
   function addImmichSource(album: { id: string; albumName: string }) {
     if (!selected) return;
-    const source: ImmichDataSource = { ...restFields, type: "immich", id: crypto.randomUUID(), name: album.albumName, integrationId: selected.id, resource: "album", albumId: album.id, maxAssets: 500, refreshSeconds: 300 };
+    const source: ImmichDataSource = { ...restFields, type: "immich", id: crypto.randomUUID(), name: album.albumName, integrationId: selected.id, resource: "album", albumId: album.id, maxAssets: 500, refreshSeconds: 30 };
     onDocument({ dataSources: [...document.dataSources, source] });
     onNotice(`Album „${album.albumName}“ als Datenquelle hinzugefügt.`, true);
   }
