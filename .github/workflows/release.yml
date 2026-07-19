@@ -34,13 +34,15 @@ jobs:
           version=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' apps/mobile/app/build.gradle.kts)
           test "v$version" = "$GITHUB_REF_NAME"
       - name: Verify signature
-        run: "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose apps/mobile/app/build/outputs/apk/release/app-release.apk
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose apps/mobile/app/build/outputs/apk/release/app-release.apk
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          cp apps/mobile/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/display.apk"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" apps/mobile/app/build/outputs/apk/release/app-release.apk#display.apk --clobber
+            gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/display.apk" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" apps/mobile/app/build/outputs/apk/release/app-release.apk#display.apk --generate-notes --verify-tag
+            gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP/display.apk" --generate-notes --verify-tag
           fi
