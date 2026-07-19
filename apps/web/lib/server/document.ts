@@ -1,12 +1,19 @@
+import { validateCustomUi } from "../custom-ui.ts";
+
 export function parseDashboardDocument(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Dashboard-Dokument fehlt");
   const item = value as Record<string, unknown>;
-  if (![3, 4, 5].includes(Number(item.schemaVersion))) throw new Error("Dashboard-Schema wird nicht unterstützt");
+  if (![3, 4, 5, 6].includes(Number(item.schemaVersion))) throw new Error("Dashboard-Schema wird nicht unterstützt");
   if (typeof item.name !== "string" || !item.name.trim()) throw new Error("Dashboard-Name fehlt");
   if (!item.settings || typeof item.settings !== "object") throw new Error("Dashboard-Einstellungen fehlen");
   if (!Array.isArray(item.pages) || item.pages.length < 1) throw new Error("Dashboard benötigt mindestens eine Seite");
   if (!Array.isArray(item.dataSources)) throw new Error("Datenquellen sind ungültig");
   if (Number(item.schemaVersion) >= 4 && !Array.isArray(item.actions)) throw new Error("Aktionen sind ungültig");
+  if (Number(item.schemaVersion) >= 6 && item.customUi !== undefined) {
+    const pageIds = new Set((item.pages as Array<Record<string, unknown>>).map((page) => String(page.id)));
+    const errors = validateCustomUi(item.customUi, pageIds);
+    if (errors.length) throw new Error(errors[0]);
+  }
   const ids = new Set<string>();
   for (const source of item.dataSources as Array<Record<string, unknown>>) {
     if (typeof source.id !== "string" || !source.id || ids.has(source.id)) throw new Error("Datenquellen benötigen eindeutige IDs");
@@ -25,6 +32,17 @@ export function parseDashboardDocument(value: unknown): Record<string, unknown> 
     if (raw.cooldownMs !== undefined && (!Number.isFinite(raw.cooldownMs) || Number(raw.cooldownMs) < 0 || Number(raw.cooldownMs) > 3_600_000)) throw new Error("Action-Cooldown ist ungültig");
     if (raw.timeoutMs !== undefined && (!Number.isFinite(raw.timeoutMs) || Number(raw.timeoutMs) < 1000 || Number(raw.timeoutMs) > 20_000)) throw new Error("Action-Timeout muss zwischen 1 und 20 Sekunden liegen");
     if (raw.responseSourceId !== undefined && !ids.has(String(raw.responseSourceId))) throw new Error("Action-Antwortdatenquelle ist ungültig");
+  }
+  if (item.customUi && typeof item.customUi === "object") {
+    const pages = (item.customUi as { pages?: Record<string, unknown> }).pages ?? {};
+    const visit = (raw: unknown) => {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+      const node = raw as Record<string, unknown>;
+      if (node.sourceId !== undefined && !ids.has(String(node.sourceId))) throw new Error("Custom UI verweist auf keine vorhandene Datenquelle");
+      if (node.actionId !== undefined && !actionIds.has(String(node.actionId))) throw new Error("Custom UI verweist auf keine vorhandene Aktion");
+      if (Array.isArray(node.children)) node.children.forEach(visit);
+    };
+    Object.values(pages).forEach(visit);
   }
   for (const source of item.dataSources as Array<Record<string, unknown>>) if (source.type === "action_response" && !actionIds.has(String(source.actionId))) throw new Error("Action-Antwortdatenquelle verweist auf keine Action");
   for (const page of item.pages as Array<Record<string, unknown>>) for (const raw of (page.widgets ?? []) as Array<Record<string, unknown>>) {

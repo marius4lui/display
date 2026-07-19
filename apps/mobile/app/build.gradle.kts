@@ -17,8 +17,8 @@ android {
         applicationId = "com.kmuc.display"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.2.0"
         buildConfigField("String", "RELEASES_API_URL", "\"https://api.github.com/repos/marius4lui/display/releases/latest\"")
     }
 

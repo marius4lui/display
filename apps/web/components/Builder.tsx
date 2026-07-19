@@ -9,6 +9,7 @@ import {
 } from "../lib/dashboard";
 import ApiWorkbench from "./ApiWorkbench";
 import IntegrationStudio from "./IntegrationStudio";
+import CustomUiStudio from "./CustomUiStudio";
 import { CanvasStage, type Placement, type PreviewDevice, type ResizeDirection } from "./studio/CanvasStage";
 import { ActivityRail, ContextPanel, type Activity, type DashboardSummary, type DeviceSummary, type PairingQr, type TemplateEntry, type VersionSummary } from "./studio/ContextPanel";
 import { Inspector } from "./studio/Inspector";
@@ -40,7 +41,7 @@ export default function Builder() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [studioMode, setStudioMode] = useState<"edit" | "preview">("edit");
-  const [workspaceView, setWorkspaceView] = useState<"dashboard" | "api" | "integrations">("dashboard");
+  const [workspaceView, setWorkspaceView] = useState<"dashboard" | "api" | "integrations" | "custom-ui">("dashboard");
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("display");
   const [apiSourceId, setApiSourceId] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -419,7 +420,7 @@ export default function Builder() {
 
   return <main className="builder-shell">
     <StudioTopbar name={document.name} workspace={workspaceView} status={status} busy={busy} onName={(name) => patchDocument({ name })} onWorkspace={setWorkspaceView} onPreview={() => { setStudioMode("preview"); setWorkspaceView("dashboard"); }} onSave={() => void save(false)} onPublish={() => void save(true)}/>
-    {workspaceView === "integrations" ? <IntegrationStudio document={document} onDocument={patchDocument} onClose={() => setWorkspaceView("dashboard")} onNotice={(text, ok) => setNotice({ kind: ok ? "ok" : "error", text })}/> : workspaceView === "api" ? <ApiWorkbench
+    {workspaceView === "custom-ui" ? <CustomUiStudio document={document} data={previewData} onDocument={patchDocument} onClose={() => setWorkspaceView("dashboard")} onNotice={(text, ok) => setNotice({ kind: ok ? "ok" : "error", text })}/> : workspaceView === "integrations" ? <IntegrationStudio document={document} onDocument={patchDocument} onClose={() => setWorkspaceView("dashboard")} onNotice={(text, ok) => setNotice({ kind: ok ? "ok" : "error", text })}/> : workspaceView === "api" ? <ApiWorkbench
       sources={document.dataSources}
       initialSourceId={apiSourceId}
       onAdd={() => { const id = crypto.randomUUID(); patchDocument({ dataSources: [...document.dataSources, { id, name: "Neue API", method: "GET", url: "https://", headers: {}, query: {}, variables: {}, auth: { type: "none" }, refreshSeconds: 60 }] }); return id; }}

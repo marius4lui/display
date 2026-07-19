@@ -242,7 +242,7 @@ private fun DashboardScreen(controller: DashboardController) {
     val switchPage: (Int) -> Unit = { direction -> pageIndex = (pageIndex + direction + dashboard.pages.size) % dashboard.pages.size }
     val page = dashboard.pages[pageIndex.coerceIn(0, dashboard.pages.lastIndex)]
     BoxWithConstraints(
-        Modifier.fillMaxSize().background(parseColor(dashboard.settings.background)).safeDrawingPadding()
+        Modifier.fillMaxSize().background(parseColor(dashboard.customUi?.optJSONObject("theme")?.optString("background")?.takeIf(String::isNotBlank) ?: dashboard.settings.background)).safeDrawingPadding()
     ) {
         // Scale the whole dashboard from its available dp size. Fixed dp/sp values become
         // disproportionately large on high-density phones and small landscape displays.
@@ -267,6 +267,11 @@ private fun DashboardScreen(controller: DashboardController) {
                         )
                     }
             ) {
+                val customUi = dashboard.customUi?.takeIf { it.optBoolean("enabled", false) }
+                val customRoot = customUi?.optJSONObject("pages")?.optJSONObject(page.id)
+                if (customRoot != null) {
+                    CustomUiNodeView(customRoot, controller, uiScale, Modifier.fillMaxSize())
+                } else {
                 val columns = dashboard.settings.columns.coerceAtLeast(1)
                 val rows = dashboard.settings.rows.coerceAtLeast(1)
                 val cellWidth = maxWidth / columns
@@ -366,8 +371,46 @@ private fun DashboardScreen(controller: DashboardController) {
                         maxLines = 1,
                     )
                 }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun CustomUiNodeView(node: JSONObject, controller: DashboardController, uiScale: Float, modifier: Modifier = Modifier) {
+    val type = node.optString("type")
+    val style = node.optJSONObject("style") ?: JSONObject()
+    val padding = (style.optDouble("padding", 0.0).toFloat() * uiScale).coerceAtLeast(0f).dp
+    val gap = (style.optDouble("gap", 0.0).toFloat() * uiScale).coerceAtLeast(0f).dp
+    val radius = (style.optDouble("radius", 0.0).toFloat() * uiScale).coerceAtLeast(0f).dp
+    val background = style.optString("background").takeIf(String::isNotBlank)
+    val foreground = parseColor(style.optString("foreground", "#F8F9FF"))
+    val opacity = style.optDouble("opacity", 1.0).toFloat().coerceIn(0f, 1f)
+    var decorated = modifier.alpha(opacity)
+    if (radius.value > 0f) decorated = decorated.clip(RoundedCornerShape(radius))
+    if (background != null) decorated = decorated.background(parseColor(background))
+    decorated = decorated.padding(padding)
+    val children = node.optJSONArray("children")
+    fun child(index: Int): JSONObject? = children?.optJSONObject(index)
+    when (type) {
+        "column", "card", "grid" -> Column(decorated, verticalArrangement = Arrangement.spacedBy(gap)) {
+            for (index in 0 until (children?.length() ?: 0)) child(index)?.let { CustomUiNodeView(it, controller, uiScale, Modifier.fillMaxWidth()) }
+        }
+        "row" -> Row(decorated, horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.CenterVertically) {
+            for (index in 0 until (children?.length() ?: 0)) child(index)?.let { CustomUiNodeView(it, controller, uiScale, Modifier.weight(1f)) }
+        }
+        "text" -> Text(node.optString("text"), decorated, color = foreground, fontSize = (style.optDouble("fontSize", 18.0).toFloat() * uiScale).coerceAtLeast(7f).sp, fontWeight = if (style.optInt("fontWeight", 400) >= 600) FontWeight.Bold else FontWeight.Normal)
+        "value" -> {
+            val sourceId = node.optString("sourceId"); val raw = valueAtJsonPath(controller.values[sourceId]?.value, node.optString("path"))
+            Column(decorated) {
+                node.optString("title").takeIf(String::isNotBlank)?.let { Text(it.uppercase(), color = foreground.copy(alpha = .6f), fontSize = (10f * uiScale).coerceAtLeast(6f).sp) }
+                Text(if (raw == null) node.optString("text", "—") else formatRuntime(raw, node.optString("format"), node.optString("suffix")), color = foreground, fontSize = (style.optDouble("fontSize", 34.0).toFloat() * uiScale).coerceAtLeast(10f).sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        "image" -> node.optString("url").takeIf(String::isNotBlank)?.let { AsyncImage(it, node.optString("title"), decorated.fillMaxSize(), contentScale = if (node.optString("fit") == "contain") ContentScale.Fit else ContentScale.Crop) }
+        "spacer" -> Spacer(decorated.height((style.optDouble("height", 16.0).toFloat() * uiScale).coerceAtLeast(1f).dp))
+        "button" -> Button(onClick = {}, modifier = decorated, colors = ButtonDefaults.buttonColors(containerColor = parseColor(style.optString("background", "#8B7CFF")))) { Text(node.optString("text", node.optString("title", "Ausführen"))) }
     }
 }
 

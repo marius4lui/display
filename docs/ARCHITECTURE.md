@@ -15,4 +15,4 @@ PostgreSQL, Authentifizierung und Row-Level Security kommen aus einer selbst geh
 3. Der Player lädt ausschließlich die aktive Version und sendet Heartbeats.
 4. Datenquellen und Aktionen laufen über serverseitig validierte Proxys; Zugangsdaten gelangen nicht in den Web-Player.
 
-Das aktuelle Dokumentformat ist Schema v4. Ältere gespeicherte Dokumente werden beim Laden migriert, aber nicht neu erzeugt.
+Das aktuelle Dokumentformat ist Schema v6. Es unterstützt neben dem klassischen Widget-Grid ein optionales, deklaratives `customUi`-Layout. Dieses wird strikt validiert und von Web und Android ohne ausführbares HTML oder JavaScript gerendert. Ältere gespeicherte Dokumente werden beim Laden migriert, aber nicht neu erzeugt.

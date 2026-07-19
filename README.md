@@ -70,6 +70,16 @@ Weitere Dokumentation:
 
 - [Architektur](docs/ARCHITECTURE.md)
 - [Deployment und Releases](docs/DEPLOYMENT.md)
+
+## KI-Skill für Custom UI
+
+Das Repository enthält den Skill `design-display-ui` zum Erstellen, Überarbeiten und Validieren von Custom-UI-JSON. Installation über [skills.sh](https://skills.sh):
+
+```sh
+npx skills add https://github.com/marius4lui/display --skill design-display-ui
+```
+
+Danach kann der Skill beispielsweise mit `$design-display-ui` aufgerufen werden.
 - [n8n- und Home-Assistant-Integrationen](docs/integrations.md)
 - [Beitragen](CONTRIBUTING.md)
 - [Sicherheitsrichtlinie](SECURITY.md)

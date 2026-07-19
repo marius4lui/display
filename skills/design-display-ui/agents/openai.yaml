@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design display UI"
+  short_description: "Generate polished display UI JSON"
+  default_prompt: "Use $design-display-ui to create a polished custom UI for my display dashboard."

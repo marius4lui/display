@@ -1,3 +1,5 @@
+import type { CustomUiDocument } from "./custom-ui";
+
 export type WidgetType = "text" | "clock" | "image" | "immich_album" | "value" | "weather" | "metric" | "status" | "list" | "chart" | "gauge" | "button";
 export type ErrorBehavior = "stale" | "empty" | "error";
 export type RuleOperator = ">" | ">=" | "<" | "<=" | "=" | "!=" | "contains" | "exists";
@@ -127,7 +129,7 @@ export interface PageNavigation {
 }
 
 export interface DashboardDocument {
-  schemaVersion: 5;
+  schemaVersion: 6;
   name: string;
   settings: {
     configPollSeconds: number;
@@ -141,9 +143,11 @@ export interface DashboardDocument {
   actions: DashboardAction[];
   pages: DashboardPage[];
   pageNavigation: PageNavigation;
+  customUi?: CustomUiDocument;
 }
 
 export type LegacyDashboardDocument =
+  | (Omit<DashboardDocument, "schemaVersion"> & { schemaVersion: 5 })
   | (Omit<DashboardDocument, "schemaVersion"> & { schemaVersion: 4 })
   | (Omit<DashboardDocument, "schemaVersion" | "actions"> & { schemaVersion: 3 })
   | (Omit<DashboardDocument, "schemaVersion" | "pages" | "pageNavigation" | "actions"> & { schemaVersion: 1 | 2; widgets: Widget[] });
@@ -154,7 +158,7 @@ const widget = (type: WidgetType, title: string, x: number, y: number, width: nu
 });
 
 export const blankDashboard = (): DashboardDocument => ({
-  schemaVersion: 5,
+  schemaVersion: 6,
   name: "Mein Dashboard",
   settings: { configPollSeconds: 30, dataPollSeconds: 300, columns: 12, rows: 8, background: "#090b12", foreground: "#f6f7fb" },
   dataSources: [],
@@ -186,14 +190,14 @@ export function addDefaultWeatherWidgets(document: DashboardDocument): Dashboard
 }
 
 export function normalizeDashboard(input: DashboardDocument | LegacyDashboardDocument): DashboardDocument {
-  if (input.schemaVersion === 5) return input;
-  if (input.schemaVersion === 4) return { ...input, schemaVersion: 5 };
-  if (input.schemaVersion === 3) return { ...input, schemaVersion: 5, actions: [] };
-  if (input.schemaVersion === 2) return { ...(input as unknown as DashboardDocument), schemaVersion: 5, actions: [] };
+  if (input.schemaVersion === 6) return input;
+  if (input.schemaVersion === 5 || input.schemaVersion === 4) return { ...input, schemaVersion: 6 };
+  if (input.schemaVersion === 3) return { ...input, schemaVersion: 6, actions: [] };
+  if (input.schemaVersion === 2) return { ...(input as unknown as DashboardDocument), schemaVersion: 6, actions: [] };
   const { widgets, ...rest } = input;
   return {
     ...rest,
-    schemaVersion: 5,
+    schemaVersion: 6,
     actions: [],
     pages: [{ id: crypto.randomUUID(), name: "Seite 1", widgets }],
     pageNavigation: { visible: true, x: 4, y: 7, width: 4, height: 1, style: { background: "#151b2b", foreground: "#f6f7fb", accent: "#7c5cff", align: "center" } },

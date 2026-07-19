@@ -87,6 +87,7 @@ data class DashboardDocument(
     val pages: List<DashboardPage>,
     val pageNavigation: PageNavigation,
     val dataSources: List<DashboardDataSource>,
+    val customUi: JSONObject?,
 )
 
 private fun JSONObject.optionalString(key: String): String? = if (has(key) && !isNull(key)) getString(key) else null
@@ -102,7 +103,7 @@ fun parsePublishedDashboard(json: String): PublishedDashboard {
 fun parseDashboardDocument(json: String): DashboardDocument {
     val root = JSONObject(json)
     val schemaVersion = root.getInt("schemaVersion")
-    require(schemaVersion in 1..5) { "Dashboard-Schema wird nicht unterstützt" }
+    require(schemaVersion in 1..6) { "Dashboard-Schema wird nicht unterstützt" }
     val settingsJson = root.getJSONObject("settings")
     val settings = DashboardSettings(
         configPollSeconds = settingsJson.optInt("configPollSeconds", 30).coerceAtLeast(10),
@@ -162,7 +163,7 @@ fun parseDashboardDocument(json: String): DashboardDocument {
             ))
         }
     }
-    return DashboardDocument(root.optString("name", "display"), settings, pages, pageNavigation, sources)
+    return DashboardDocument(root.optString("name", "display"), settings, pages, pageNavigation, sources, root.optJSONObject("customUi"))
 }
 
 fun valueAtJsonPath(value: Any?, path: String?): Any? {

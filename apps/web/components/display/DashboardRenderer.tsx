@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from "react";
 import { effectiveWidget, formatValue, matchesRule, valueAtPath, type DashboardDocument, type Widget } from "../../lib/dashboard";
+import type { CustomUiNode, CustomUiStyle } from "../../lib/custom-ui";
 
 export interface RuntimeState {
   value?: unknown;
@@ -10,6 +11,36 @@ export interface RuntimeState {
   stale?: boolean;
   checkedAt?: string;
   succeededAt?: string;
+}
+
+function customStyle(style: CustomUiStyle = {}): CSSProperties {
+  const align = style.align === "start" ? "flex-start" : style.align === "end" ? "flex-end" : style.align;
+  const justify = style.justify === "start" ? "flex-start" : style.justify === "end" ? "flex-end" : style.justify;
+  return { background: style.background, color: style.foreground, padding: style.padding, gap: style.gap, borderRadius: style.radius,
+    fontSize: style.fontSize, fontWeight: style.fontWeight, alignItems: align, justifyContent: justify, width: style.width, height: style.height,
+    opacity: style.opacity, gridTemplateColumns: style.columns ? `repeat(${Math.max(1, Math.min(12, style.columns))}, minmax(0, 1fr))` : undefined,
+    boxShadow: style.shadow === "soft" ? "0 16px 45px #00000028" : style.shadow === "strong" ? "0 22px 70px #00000055" : undefined };
+}
+
+function CustomNode({ node, runtime, onAction }: { node: CustomUiNode; runtime: Record<string, RuntimeState>; onAction?: (widget: Widget) => void }) {
+  const state = node.sourceId ? runtime[node.sourceId] : undefined;
+  const raw = node.sourceId ? valueAtPath(state?.value, node.path) : undefined;
+  const children = node.children?.map((child, index) => <CustomNode key={child.id ?? `${child.type}-${index}`} node={child} runtime={runtime} onAction={onAction} />);
+  if (node.type === "text") return <div className="custom-ui-text" style={customStyle(node.style)}>{node.text ?? ""}</div>;
+  if (node.type === "value") return <div className={`custom-ui-value${state?.stale ? " is-stale" : ""}`} style={customStyle(node.style)}>{node.title && <small>{node.title}</small>}<strong>{raw === undefined ? node.text ?? "—" : formatValue(raw, node.format, node.suffix)}</strong></div>;
+  if (node.type === "image") return <div className="custom-ui-image" style={customStyle(node.style)}>{node.url ? <img src={node.url} alt={node.title ?? ""} style={{ objectFit: node.fit ?? "cover" }} /> : <span>{node.text ?? "Bild fehlt"}</span>}</div>;
+  if (node.type === "spacer") return <div className="custom-ui-spacer" style={customStyle(node.style)} />;
+  if (node.type === "button") return <button className="custom-ui-button" style={customStyle(node.style)} onClick={() => node.actionId && onAction?.({ actionId: node.actionId, type: "button", id: node.id ?? node.actionId } as Widget)}>{node.icon && <span>{node.icon}</span>}{node.text ?? node.title ?? "Ausführen"}</button>;
+  return <div className={`custom-ui-${node.type}`} style={customStyle(node.style)}>{children}</div>;
+}
+
+function CustomUiRenderer({ document, pageId, runtime, onAction, className, onSwipe }: { document: DashboardDocument; pageId: string; runtime: Record<string, RuntimeState>; onAction?: (widget: Widget) => void; className?: string; onSwipe?: (direction: number) => void }) {
+  const ui = document.customUi!; const root = ui.pages[pageId];
+  const swipe = useRef<{ x: number; y: number } | null>(null);
+  const fontFamily = ui.theme?.fontFamily === "mono" ? "ui-monospace, monospace" : ui.theme?.fontFamily === "rounded" ? '"Arial Rounded MT Bold", ui-rounded, sans-serif' : "Inter, system-ui, sans-serif";
+  return <div className={`custom-ui-root ${className ?? ""}`} onPointerDown={(event) => { swipe.current = { x: event.clientX, y: event.clientY }; }} onPointerUp={(event) => { const start = swipe.current; swipe.current = null; if (!start || !onSwipe) return; const dx = event.clientX - start.x, dy = event.clientY - start.y; if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) onSwipe(dx < 0 ? 1 : -1); }} style={{ background: ui.theme?.background ?? document.settings.background, color: ui.theme?.foreground ?? document.settings.foreground, fontFamily, "--custom-accent": ui.theme?.accent ?? "#8b7cff" } as CSSProperties}>
+    {root ? <CustomNode node={root} runtime={runtime} onAction={onAction} /> : <div className="custom-ui-missing">Für diese Seite fehlt ein Custom-UI-Layout.</div>}
+  </div>;
 }
 
 function Clock() {
@@ -119,6 +150,7 @@ export function DashboardRenderer({ document, pageIndex, runtime, onPageChange, 
   const swipe = useRef<{ x: number; y: number } | null>(null);
   const page = document.pages[Math.max(0, Math.min(pageIndex, document.pages.length - 1))] ?? document.pages[0];
   const change = (direction: number) => onPageChange((pageIndex + direction + document.pages.length) % document.pages.length);
+  if (document.customUi?.enabled) return <CustomUiRenderer document={document} pageId={page.id} runtime={runtime} onAction={onAction} className={className} onSwipe={document.pages.length > 1 ? change : undefined} />;
   return <div className={`display-grid ${className}`} onPointerDown={(event) => { swipe.current = { x: event.clientX, y: event.clientY }; }} onPointerUp={(event) => {
     const start = swipe.current; swipe.current = null; if (!start || document.pages.length < 2) return;
     const dx = event.clientX - start.x, dy = event.clientY - start.y;

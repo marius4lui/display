@@ -7,7 +7,7 @@ import { homeAssistantSourceRequest, oauthRefreshForm, providerActionRequest } f
 
 const style = { background: "#111", foreground: "#fff", accent: "#70f", align: "center" };
 const base = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   name: "Integration Test",
   settings: { configPollSeconds: 30, dataPollSeconds: 60, columns: 12, rows: 8, background: "#000", foreground: "#fff" },
   dataSources: [],
@@ -16,7 +16,7 @@ const base = {
   pageNavigation: { visible: false, x: 4, y: 7, width: 4, height: 1, style },
 };
 
-test("Schema v5 akzeptiert eine gültige Action mit Button", () => {
+test("Schema v6 akzeptiert eine gültige Action mit Button", () => {
   const document = structuredClone(base);
   document.actions.push({
     id: "action-1", name: "Licht", integrationId: "10000000-0000-4000-8000-000000000001",
@@ -24,10 +24,10 @@ test("Schema v5 akzeptiert eine gültige Action mit Button", () => {
     target: { domain: "light", service: "turn_on" }, confirmation: true, cooldownMs: 2000, timeoutMs: 20000,
   });
   document.pages[0].widgets.push({ id: "button", type: "button", title: "Licht", actionId: "action-1", x: 0, y: 0, width: 3, height: 2, errorBehavior: "error", style });
-  assert.equal(parseDashboardDocument(document).schemaVersion, 5);
+  assert.equal(parseDashboardDocument(document).schemaVersion, 6);
 });
 
-test("Schema v5 lehnt fremde Button-Actions und überlange Timeouts ab", () => {
+test("Schema v6 lehnt fremde Button-Actions und überlange Timeouts ab", () => {
   const missing = structuredClone(base);
   missing.pages[0].widgets.push({ id: "button", type: "button", title: "Manipuliert", actionId: "foreign", x: 0, y: 0, width: 3, height: 2, errorBehavior: "error", style });
   assert.throws(() => parseDashboardDocument(missing), /keine vorhandene Action/);
@@ -37,25 +37,41 @@ test("Schema v5 lehnt fremde Button-Actions und überlange Timeouts ab", () => {
   assert.throws(() => parseDashboardDocument(timeout), /Timeout/);
 });
 
-test("Schema v4 wird verlustfrei auf v5 normalisiert", () => {
+test("Schema v4 wird verlustfrei auf v6 normalisiert", () => {
   const legacy = { ...structuredClone(base), schemaVersion: 4 };
   const normalized = normalizeDashboard(legacy);
-  assert.equal(normalized.schemaVersion, 5);
+  assert.equal(normalized.schemaVersion, 6);
   assert.deepEqual(normalized.actions, legacy.actions);
   assert.equal(normalized.name, legacy.name);
   assert.deepEqual(normalized.pages, legacy.pages);
 });
 
-test("Schema v5 akzeptiert ein Immich-Album-Widget nur mit gültiger Quelle", () => {
+test("Schema v6 akzeptiert ein Immich-Album-Widget nur mit gültiger Quelle", () => {
   const document = structuredClone(base);
   document.dataSources.push({
     id: "immich-source", name: "Familie", type: "immich", integrationId: "10000000-0000-4000-8000-000000000001",
     resource: "album", albumId: "20000000-0000-4000-8000-000000000002", method: "GET", url: "", headers: {}, auth: { type: "none" },
   });
   document.pages[0].widgets.push({ id: "album", type: "immich_album", title: "Familie", dataSourceId: "immich-source", x: 0, y: 0, width: 6, height: 4, errorBehavior: "stale", style });
-  assert.equal(parseDashboardDocument(document).schemaVersion, 5);
+  assert.equal(parseDashboardDocument(document).schemaVersion, 6);
   document.pages[0].widgets[0].dataSourceId = "missing";
   assert.throws(() => parseDashboardDocument(document), /keine vorhandene Datenquelle/);
+});
+
+test("Schema v6 validiert Custom UI und sichere Bild-URLs", () => {
+  const document = structuredClone(base);
+  document.customUi = { version: 1, enabled: true, pages: { page: { type: "column", children: [{ type: "text", text: "Hallo" }] } } };
+  assert.equal(parseDashboardDocument(document).schemaVersion, 6);
+  document.customUi.pages.page.children.push({ type: "image", url: "javascript:alert(1)" });
+  assert.throws(() => parseDashboardDocument(document), /sichere Player-/);
+});
+
+test("Custom UI darf nur vorhandene Datenquellen und Aktionen binden", () => {
+  const document = structuredClone(base);
+  document.customUi = { version: 1, enabled: true, pages: { page: { type: "value", sourceId: "missing", path: "value" } } };
+  assert.throws(() => parseDashboardDocument(document), /keine vorhandene Datenquelle/);
+  document.customUi.pages.page = { type: "button", actionId: "missing" };
+  assert.throws(() => parseDashboardDocument(document), /keine vorhandene Aktion/);
 });
 
 test("Integrationsziele blockieren HTTP und private IPs", async () => {

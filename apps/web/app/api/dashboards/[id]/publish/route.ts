@@ -8,7 +8,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const found = await ownedDisplay(request, (await params).id); if (found.error) return found.error;
   const { data: draft } = await found.context.database.from("display_drafts").select("document").eq("display_id", found.display.id).maybeSingle();
   const document = draft?.document as DashboardDocument | undefined;
-  if (document?.schemaVersion === 5) {
+  if (document?.schemaVersion === 6) {
     const ids = [...new Set([...(document.actions ?? []).map((action) => action.integrationId), ...document.dataSources.filter((source) => source.type === "home_assistant" || source.type === "n8n" || source.type === "immich").map((source) => source.integrationId)])];
     const { data: integrations } = ids.length ? await found.context.database.from("integrations").select("id,provider,status").in("id", ids) : { data: [] };
     const available = new Map((integrations ?? []).map((item) => [item.id, item]));
