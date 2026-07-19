@@ -3,7 +3,7 @@ import type { DashboardDocument, DataSource } from "../../../../../lib/dashboard
 import { executeDataSource } from "../../../../../lib/server/data-source";
 import { apiError } from "../../../../../lib/server/http";
 import { playerDevice, requireDisplayHost } from "../../../../../lib/server/player";
-import { executeHomeAssistantSource, executeN8nSource, ownedIntegration } from "../../../../../lib/server/integrations";
+import { executeHomeAssistantSource, executeImmichSource, executeN8nSource, ownedIntegration } from "../../../../../lib/server/integrations";
 
 export const runtime = "nodejs";
 
@@ -40,6 +40,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const integration = await ownedIntegration(database, display.owner_id, source.integrationId);
       if (!integration || integration.provider !== "n8n" || integration.status !== "active") return apiError("INTEGRATION_UNAVAILABLE", "n8n ist nicht aktiv", 409);
       const result = await executeN8nSource(integration, source);
+      return NextResponse.json({ value: result.value, checkedAt: new Date().toISOString() }, { headers: { "Cache-Control": "private, no-store" } });
+    }
+    if (source.type === "immich") {
+      const integration = await ownedIntegration(database, display.owner_id, source.integrationId);
+      if (!integration || integration.provider !== "immich" || integration.status !== "active") return apiError("INTEGRATION_UNAVAILABLE", "Immich ist nicht aktiv", 409);
+      const result = await executeImmichSource(integration, source);
       return NextResponse.json({ value: result.value, checkedAt: new Date().toISOString() }, { headers: { "Cache-Control": "private, no-store" } });
     }
     const result = await executeDataSource(source, display.owner_id, database);

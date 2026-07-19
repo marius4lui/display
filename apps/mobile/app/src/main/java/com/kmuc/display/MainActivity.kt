@@ -3,6 +3,7 @@ package com.kmuc.display
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Color as AndroidColor
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -18,6 +19,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -62,6 +64,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -278,6 +281,7 @@ private fun DashboardScreen(controller: DashboardController) {
                     DashboardWidgetView(
                         widget,
                         controller.values[widget.dataSourceId],
+                        controller,
                         uiScale,
                         Modifier.offset(cellWidth * x, cellHeight * y).size(width, height),
                     )
@@ -368,7 +372,7 @@ private fun DashboardScreen(controller: DashboardController) {
 }
 
 @Composable
-private fun DashboardWidgetView(widget: DashboardWidget, runtime: RuntimeValue?, uiScale: Float, modifier: Modifier) {
+private fun DashboardWidgetView(widget: DashboardWidget, runtime: RuntimeValue?, controller: DashboardController, uiScale: Float, modifier: Modifier) {
     val raw = valueAtJsonPath(runtime?.value, widget.jsonPath)
     val rule = firstMatchingRule(raw, widget.conditionalRules)
     val background = rule?.optString("background")?.takeIf(String::isNotBlank) ?: widget.style.background
@@ -390,6 +394,7 @@ private fun DashboardWidgetView(widget: DashboardWidget, runtime: RuntimeValue?,
         val padding = (18f * widgetScale).coerceIn(4f, 24f).dp
         Box(Modifier.fillMaxSize().padding(padding)) {
             if (widget.type == "image" && !widget.imageUrl.isNullOrBlank()) AsyncImage(widget.imageUrl, widget.title, Modifier.fillMaxSize().clip(RoundedCornerShape((12f * widgetScale).coerceAtLeast(4f).dp)), contentScale = ContentScale.Crop)
+            else if (widget.type == "immich_album") ImmichAlbum(widget, raw as? JSONObject, controller, widgetScale)
             else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
                 Text(widget.title.uppercase(), color = parseColor(foreground).copy(alpha=.58f), fontSize=(10f * widgetScale).coerceAtLeast(6f).sp, fontWeight=FontWeight.Bold, letterSpacing=(1f * widgetScale).coerceAtLeast(.25f).sp, maxLines=1, overflow=TextOverflow.Ellipsis)
                 when (widget.type) {
@@ -403,6 +408,47 @@ private fun DashboardWidgetView(widget: DashboardWidget, runtime: RuntimeValue?,
                 if (runtime?.stale == true) Text("Zuletzt bekannter Wert", color=Color(0xFFFFB45F), fontSize=(9f * widgetScale).coerceAtLeast(6f).sp, maxLines=1, overflow=TextOverflow.Ellipsis)
             }
         }
+    }
+}
+
+@Composable
+private fun ImmichAlbum(widget: DashboardWidget, raw: JSONObject?, controller: DashboardController, uiScale: Float) {
+    val sourceId = widget.dataSourceId.orEmpty()
+    val assetsJson = raw?.optJSONArray("assets")
+    val assets = remember(assetsJson?.toString()) { buildList {
+        if (assetsJson != null) for (position in 0 until assetsJson.length()) assetsJson.optJSONObject(position)?.let(::add)
+    } }
+    var index by remember(assets.map { it.optString("id") }) { mutableStateOf(0) }
+    var paused by remember { mutableStateOf(false) }
+    var dragDistance by remember { mutableStateOf(0f) }
+    val current = assets.getOrNull(index.coerceIn(0, (assets.size - 1).coerceAtLeast(0)))
+    val assetId = current?.optString("id").orEmpty()
+    var imageBytes by remember(assetId) { mutableStateOf<ByteArray?>(null) }
+    var imageError by remember(assetId) { mutableStateOf(false) }
+    fun change(direction: Int) { if (assets.isNotEmpty()) index = (index + direction + assets.size) % assets.size }
+    LaunchedEffect(assetId, sourceId) {
+        imageBytes = null; imageError = false
+        if (assetId.isNotBlank() && sourceId.isNotBlank()) runCatching { controller.fetchImmichImage(sourceId, assetId) }.onSuccess { imageBytes = it }.onFailure { imageError = true }
+    }
+    LaunchedEffect(assets.size, paused, widget.slideshowSeconds) {
+        if (!paused && assets.size > 1 && widget.slideshowSeconds > 0) while (true) { delay(widget.slideshowSeconds.coerceAtLeast(2) * 1_000L); change(1) }
+    }
+    Box(
+        Modifier.fillMaxSize().pointerInput(widget.id, assets.size) {
+            detectHorizontalDragGestures(
+                onDragStart = { dragDistance = 0f },
+                onHorizontalDrag = { changeEvent, amount -> changeEvent.consume(); dragDistance += amount },
+                onDragEnd = { if (kotlin.math.abs(dragDistance) > 45f) change(if (dragDistance < 0) 1 else -1); dragDistance = 0f },
+                onDragCancel = { dragDistance = 0f },
+            )
+        }.clickable { paused = !paused },
+        contentAlignment = Alignment.Center,
+    ) {
+        val bitmap = remember(imageBytes) { imageBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() } }
+        if (bitmap != null) Image(bitmap, current?.optString("description")?.takeIf(String::isNotBlank) ?: current?.optString("originalFileName").orEmpty(), Modifier.fillMaxSize(), contentScale = if (widget.imageFit == "contain") ContentScale.Fit else ContentScale.Crop)
+        else Text(if (imageError) "Bild konnte nicht geladen werden" else if (assets.isEmpty()) "Album ist leer oder noch nicht geladen" else "Bild wird geladen …", color = Color.White.copy(alpha = .7f), fontSize = (12f * uiScale).coerceAtLeast(7f).sp)
+        if (current != null && widget.showCaption) Text(current.optString("description").takeIf(String::isNotBlank) ?: current.optString("originalFileName", "Foto"), Modifier.align(Alignment.BottomStart).padding(8.dp).clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = .6f)).padding(horizontal = 7.dp, vertical = 4.dp), color = Color.White, fontSize = (10f * uiScale).coerceAtLeast(7f).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (assets.isNotEmpty()) Text("${index + 1} / ${assets.size}${if (paused) " · Pause" else ""}", Modifier.align(Alignment.BottomEnd).padding(8.dp).clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = .6f)).padding(horizontal = 7.dp, vertical = 4.dp), color = Color.White, fontSize = (9f * uiScale).coerceAtLeast(7f).sp)
     }
 }
 

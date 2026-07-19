@@ -24,6 +24,7 @@ const widgetMeta: Record<WidgetType, { label: string; description: string; group
   button: { label: "Action Button", description: "Führt eine veröffentlichte Integration-Aktion aus.", group: "Inhalt" },
   text: { label: "Text", description: "Überschriften und Hinweise", group: "Inhalt" },
   image: { label: "Bild", description: "Bild aus einer URL", group: "Inhalt" },
+  immich_album: { label: "Immich-Album", description: "Swipebare Fotos aus einem Album", group: "Visualisierung" },
   clock: { label: "Uhr", description: "Lokale Zeit anzeigen", group: "Inhalt" },
   value: { label: "API-Wert", description: "Ein Feld aus einer Response", group: "Daten" },
   metric: { label: "Metrik", description: "Kompakter Kennzahlenwert", group: "Daten" },
@@ -99,7 +100,7 @@ export function ContextPanel({
   })), [search]);
 
   return <aside className="context-panel">
-    <header><div><small>Studio</small><h2>{activities.find((item) => item.id === activity)?.label}</h2></div><span className="panel-count">{activity === "widgets" ? 10 : activity === "pages" ? document.pages.length : activity === "layers" ? activePage.widgets.length : activity === "data" ? document.dataSources.length : ""}</span></header>
+    <header><div><small>Studio</small><h2>{activities.find((item) => item.id === activity)?.label}</h2></div><span className="panel-count">{activity === "widgets" ? Object.keys(widgetMeta).length : activity === "pages" ? document.pages.length : activity === "layers" ? activePage.widgets.length : activity === "data" ? document.dataSources.length : ""}</span></header>
     <div className="context-scroll">
       {activity === "widgets" && <>
         <label className="search-box"><Icon name="search"/><input placeholder="Widgets suchen" value={search} onChange={(event) => setSearch(event.target.value)}/></label>

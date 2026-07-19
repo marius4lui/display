@@ -45,6 +45,7 @@ const widgetPaths: Record<WidgetType, React.ReactNode> = {
   text: <><path d="M5 5h14M12 5v14M8 19h8"/></>,
   clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
   image: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m4 17 5-5 3 3 3-3 5 5"/></>,
+  immich_album: <><rect x="5" y="3" width="16" height="15" rx="2"/><path d="M3 7v13a1 1 0 0 0 1 1h13M6 15l4-4 3 3 2-2 5 4"/><circle cx="15" cy="8" r="1.5"/></>,
   value: <><path d="M5 8h14M5 16h14M9 4 7 20M17 4l-2 16"/></>,
   weather: <><path d="M7 18h10a4 4 0 0 0 .4-8A6 6 0 0 0 6 11.5 3.3 3.3 0 0 0 7 18z"/></>,
   metric: <><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></>,

@@ -1,4 +1,4 @@
-# n8n und Home Assistant
+# n8n, Home Assistant und Immich
 
 Integrationen werden im Studio accountgebunden angelegt. Zugangsdaten sind AES-256-GCM-verschlüsselt und werden ausschließlich auf dem Server verwendet. Player erhalten nur die veröffentlichte Action-ID und darstellbare Button-Eigenschaften.
 
@@ -19,12 +19,24 @@ Integrationen werden im Studio accountgebunden angelegt. Zugangsdaten sind AES-2
 
 Geräte werden nur über `/api/services/{domain}/{service}` gesteuert. Das Studio verwendet `POST /api/states` nicht zur Gerätesteuerung. Private LAN-Adressen sind ohne einen späteren Outbound-Connector nicht unterstützt.
 
+## Immich
+
+1. In Immich einen API-Key mit den Leserechten `album.read`, `asset.read` und `asset.view` anlegen.
+2. Immich über eine vom Backend erreichbare öffentliche HTTPS-Adresse verbinden. Als Basis-URL die API-Adresse verwenden, üblicherweise `https://photos.example.com/api`.
+3. Im Tab **Datenquellen** die Alben laden und das gewünschte Album hinzufügen.
+4. Im Dashboard ein **Immich-Album**-Widget anlegen, die Album-Datenquelle auswählen und Wechselintervall, Bildanpassung sowie Bildunterschrift konfigurieren.
+5. Das Dashboard veröffentlichen. Im Web- und Android-Player kann innerhalb des Widgets horizontal durch die Bilder gewischt werden; ein Tippen pausiert beziehungsweise startet die automatische Wiedergabe.
+
+API-Key und Immich-Adresse werden niemals an das Display ausgeliefert. Album-Metadaten und Bilder laufen über geräteautorisierte Server-Routen. Das Backend prüft bei jedem Bild, dass es zum veröffentlichten Album gehört. Videos werden derzeit ausgelassen.
+
 ## Sicherheit und Fehlerhilfe
 
 - TLS ist Pflicht. Tokens und n8n-Schlüssel regelmäßig widerrufen beziehungsweise rotieren.
 - `401`: Token, OAuth-Verbindung oder Webhook-Authentifizierung prüfen und erneut verbinden.
 - n8n `404`: Workflow veröffentlichen und den Production- statt Test-Webhook verwenden.
 - Home Assistant nicht erreichbar: öffentliche DNS-Auflösung, TLS-Zertifikat und Backend-Erreichbarkeit prüfen.
+- Immich `401`/`403`: API-Key und die Rechte `album.read`, `asset.read`, `asset.view` prüfen.
+- Leeres Immich-Widget: Album enthält keine Bilder, nur Videos oder ist für den API-Key nicht sichtbar.
 - Timeout: Zielsystem und Workflow-Laufzeit prüfen; Actions enden standardmäßig nach 20 Sekunden.
 - Widerrufene Zugangsdaten: Integration aktualisieren beziehungsweise OAuth erneut verbinden und Verbindungstest ausführen.
 

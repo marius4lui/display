@@ -14,7 +14,8 @@ export async function POST(request: NextRequest) {
   const context = await userContext(request); if (!context) return apiError("UNAUTHENTICATED", "Anmeldung erforderlich", 401);
   const body = await jsonBody(request); const provider = body?.provider; const name = String(body?.name ?? "").trim();
   const baseUrl = String(body?.baseUrl ?? "").replace(/\/+$/, "");
-  if (!["n8n", "home_assistant"].includes(String(provider)) || !name) return apiError("INVALID_INTEGRATION", "Provider und Name sind erforderlich");
+  if (!["n8n", "home_assistant", "immich"].includes(String(provider)) || !name) return apiError("INVALID_INTEGRATION", "Provider und Name sind erforderlich");
+  if (provider === "immich" && (!body?.credentials || typeof body.credentials !== "object" || !String((body.credentials as Record<string, unknown>).apiKey ?? "").trim())) return apiError("INVALID_CREDENTIALS", "Für Immich ist ein API-Key erforderlich");
   try { await assertPublicHttps(baseUrl); } catch (error) { return apiError("UNSAFE_BASE_URL", error instanceof Error ? error.message : "Unsichere Adresse"); }
   const encrypted: Partial<ReturnType<typeof encryptSecret>> = body?.credentials && typeof body.credentials === "object" ? encryptSecret(JSON.stringify(body.credentials)) : {};
   const { data, error } = await context.database.from("integrations").insert({

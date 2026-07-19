@@ -17,6 +17,7 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
@@ -197,6 +198,24 @@ class DashboardController(context: Context) {
         val bytes = connection.inputStream.use { it.readNBytes(1_048_577) }
         if (bytes.size > 1_048_576) throw IllegalStateException("Antwort überschreitet 1 MB")
         JSONTokener(String(bytes, Charsets.UTF_8)).nextValue()
+    }
+
+    suspend fun fetchImmichImage(sourceId: String, assetId: String): ByteArray = withContext(Dispatchers.IO) {
+        require(sourceId.length <= 160 && assetId.matches(Regex("[0-9a-fA-F-]{36}"))) { "Ungültige Bildanfrage" }
+        val dashboardUrl = URL(store.url() ?: error("Dashboard nicht verbunden"))
+        val displayId = dashboardUrl.path.trimEnd('/').substringAfterLast('/')
+        val encodedSource = URLEncoder.encode(sourceId, Charsets.UTF_8.name())
+        val encodedAsset = URLEncoder.encode(assetId, Charsets.UTF_8.name())
+        val connection = URL("${dashboardUrl.protocol}://${dashboardUrl.authority}/d/$displayId/images/$encodedSource?assetId=$encodedAsset").openConnection() as HttpURLConnection
+        connection.connectTimeout = 10_000; connection.readTimeout = 20_000
+        connection.setRequestProperty("Authorization", "Bearer ${store.deviceToken().orEmpty()}")
+        val code = connection.responseCode
+        if (code !in 200..299) throw IllegalStateException("HTTP $code")
+        val contentType = connection.contentType.orEmpty().lowercase()
+        if (!contentType.startsWith("image/")) throw IllegalStateException("Server lieferte kein Bild")
+        val bytes = connection.inputStream.use { it.readNBytes(10 * 1024 * 1024 + 1) }
+        if (bytes.size > 10 * 1024 * 1024) throw IllegalStateException("Bild überschreitet 10 MB")
+        bytes
     }
 
     private suspend fun request(url: String, etag: String?): HttpResult = withContext(Dispatchers.IO) {

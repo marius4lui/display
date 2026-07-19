@@ -47,6 +47,7 @@ export default function Builder() {
   const [dragPayload, setDragPayload] = useState<DragPayload | null>(null);
   const [placement, setPlacement] = useState<Placement | null>(null);
   const loadedDashboardId = useRef("");
+  const widgetClipboard = useRef<Widget | null>(null);
 
   const activePage = document.pages.find((page) => page.id === activePageId) ?? document.pages[0];
   const widgets = activePage.widgets;
@@ -348,6 +349,42 @@ export default function Builder() {
     }
     setNotice({ kind: "error", text: "Kein freier Platz für die Kopie." });
   };
+  const copyWidget = () => {
+    if (!selected) return;
+    widgetClipboard.current = structuredClone(selected);
+    setNotice({ kind: "ok", text: `Widget „${selected.title}“ kopiert.` });
+  };
+  const pasteWidget = () => {
+    const copied = widgetClipboard.current;
+    if (!copied) return;
+    const preferred = { ...structuredClone(copied), id: crypto.randomUUID(), title: `${copied.title} Kopie`, x: Math.min(document.settings.columns - copied.width, copied.x + 1), y: Math.min(document.settings.rows - copied.height, copied.y + 1) };
+    const candidates = [preferred];
+    for (let y = 0; y <= document.settings.rows - copied.height; y++) for (let x = 0; x <= document.settings.columns - copied.width; x++) candidates.push({ ...preferred, x, y });
+    const candidate = candidates.find((item) => placementIsFree(document, activePage, item));
+    if (!candidate) return setNotice({ kind: "error", text: "Kein freier Platz zum Einfügen des Widgets." });
+    patchWidgets((items) => [...items, candidate]);
+    setSelectedId(candidate.id);
+  };
+  const deleteSelectedWidget = () => {
+    if (!selected) return;
+    patchWidgets((items) => items.filter((item) => item.id !== selected.id));
+    setSelectedId("");
+  };
+
+  useEffect(() => {
+    const isTextInput = (target: EventTarget | null) => target instanceof HTMLElement && Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (workspaceView !== "dashboard" || studioMode !== "edit" || isTextInput(event.target)) return;
+      const modifier = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+      if (modifier && key === "c") { event.preventDefault(); copyWidget(); return; }
+      if (modifier && key === "v") { event.preventDefault(); pasteWidget(); return; }
+      if (event.key === "Escape") { event.preventDefault(); setSelectedId(""); return; }
+      if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); deleteSelectedWidget(); }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activePage, document, selected, studioMode, workspaceView]);
   const switchPage = (direction: number) => {
     const index = document.pages.findIndex((page) => page.id === activePage.id);
     const next = document.pages[(index + direction + document.pages.length) % document.pages.length];

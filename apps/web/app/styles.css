@@ -529,6 +529,17 @@ svg { width: 18px; height: 18px; }
 .widget-weather { display: flex; align-items: flex-end; gap: clamp(5px, min(4cqw, 6cqh), 20px); }
 .widget-weather i { color: currentColor; font-size: 1.05em; font-style: normal; }
 .widget-value img, .canvas-widget > img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+.canvas-widget[data-widget-type="immich_album"] { padding: 0; overflow: hidden; touch-action: pan-y; }
+.canvas-widget[data-widget-type="immich_album"] > small { position: absolute; z-index: 3; top: 12px; left: 14px; padding: 5px 8px; border-radius: 7px; background: #0008; color: white; }
+.canvas-widget[data-widget-type="immich_album"] .widget-value { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; }
+.immich-album { position: absolute; inset: 0; overflow: hidden; user-select: none; touch-action: pan-y; }
+.immich-album > img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; pointer-events: none; }
+.immich-caption, .immich-counter { position: absolute; z-index: 2; bottom: 12px; padding: 6px 9px; border-radius: 7px; background: #0009; color: #fff; font: 500 clamp(9px, 2.4cqh, 15px) system-ui; }
+.immich-caption { left: 14px; max-width: 65%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.immich-counter { right: 14px; }
+.immich-prev, .immich-next { position: absolute; z-index: 2; top: 50%; width: 38px; height: 52px; transform: translateY(-50%); border: 0; border-radius: 8px; background: #0007; color: #fff; font-size: 30px; cursor: pointer; }
+.immich-prev { left: 10px; }.immich-next { right: 10px; }
+.immich-empty { display: grid; height: 100%; place-items: center; padding: 20px; color: #ffffff99; font-size: 14px; text-align: center; }
 .resize-handle {
   position: absolute;
   z-index: 7;

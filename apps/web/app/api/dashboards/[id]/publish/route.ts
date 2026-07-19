@@ -8,8 +8,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const found = await ownedDisplay(request, (await params).id); if (found.error) return found.error;
   const { data: draft } = await found.context.database.from("display_drafts").select("document").eq("display_id", found.display.id).maybeSingle();
   const document = draft?.document as DashboardDocument | undefined;
-  if (document?.schemaVersion === 4) {
-    const ids = [...new Set([...(document.actions ?? []).map((action) => action.integrationId), ...document.dataSources.filter((source) => source.type === "home_assistant" || source.type === "n8n").map((source) => source.integrationId)])];
+  if (document?.schemaVersion === 5) {
+    const ids = [...new Set([...(document.actions ?? []).map((action) => action.integrationId), ...document.dataSources.filter((source) => source.type === "home_assistant" || source.type === "n8n" || source.type === "immich").map((source) => source.integrationId)])];
     const { data: integrations } = ids.length ? await found.context.database.from("integrations").select("id,provider,status").in("id", ids) : { data: [] };
     const available = new Map((integrations ?? []).map((item) => [item.id, item]));
     for (const action of document.actions ?? []) {
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       if (action.provider === "home_assistant" && (action.operation !== "home_assistant_service" || !action.target.domain || !action.target.service)) return apiError("UNSUPPORTED_ACTION", "Home Assistant unterstützt nur gültige Services/Actions", 409);
       if (action.responseSourceId && !document.dataSources.some((source) => source.type === "action_response" && source.id === action.responseSourceId && source.actionId === action.id)) return apiError("INVALID_RESPONSE_SOURCE", "Webhook-Antwortdatenquelle ist ungültig", 409);
     }
-    for (const source of document.dataSources) if (source.type === "home_assistant" || source.type === "n8n") {
+    for (const source of document.dataSources) if (source.type === "home_assistant" || source.type === "n8n" || source.type === "immich") {
       const integration = available.get(source.integrationId);
       if (!integration || integration.status !== "active" || integration.provider !== source.type) return apiError("INVALID_SOURCE_INTEGRATION", `Integration für Datenquelle „${source.name}“ ist nicht aktiv`, 409);
     }

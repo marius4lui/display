@@ -3,7 +3,7 @@ import type { DataSource } from "../../../../lib/dashboard";
 import { executeDataSource } from "../../../../lib/server/data-source";
 import { apiError } from "../../../../lib/server/http";
 import { adminClient } from "../../../../lib/server/supabase";
-import { executeHomeAssistantSource, executeN8nSource, ownedIntegration } from "../../../../lib/server/integrations";
+import { executeHomeAssistantSource, executeImmichSource, executeN8nSource, ownedIntegration } from "../../../../lib/server/integrations";
 
 export const runtime = "nodejs";
 export async function POST(request: NextRequest) {
@@ -22,11 +22,11 @@ export async function POST(request: NextRequest) {
         continue;
       }
       let value: unknown; let durationMs: number | null = null; let httpStatus: number | null = null;
-      if (source.type === "home_assistant" || source.type === "n8n") {
+      if (source.type === "home_assistant" || source.type === "n8n" || source.type === "immich") {
         const integration = await ownedIntegration(database, job.owner_id, source.integrationId);
         if (!integration || integration.status !== "active" || integration.provider !== source.type) throw new Error("Integration ist nicht aktiv");
         const started = performance.now();
-        const managed = source.type === "home_assistant" ? await executeHomeAssistantSource(integration, source) : await executeN8nSource(integration, source);
+        const managed = source.type === "home_assistant" ? await executeHomeAssistantSource(integration, source) : source.type === "n8n" ? await executeN8nSource(integration, source) : await executeImmichSource(integration, source);
         if ("image" in managed) throw new Error("Binäre Kameraquellen werden nicht historisiert");
         value = managed.value; durationMs = Math.round(performance.now() - started); httpStatus = 200;
       } else {

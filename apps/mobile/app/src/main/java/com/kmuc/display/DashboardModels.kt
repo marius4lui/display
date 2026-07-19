@@ -31,6 +31,9 @@ data class DashboardWidget(
     val height: Int,
     val staticValue: String?,
     val imageUrl: String?,
+    val slideshowSeconds: Int,
+    val imageFit: String,
+    val showCaption: Boolean,
     val dataSourceId: String?,
     val jsonPath: String?,
     val format: String?,
@@ -99,7 +102,7 @@ fun parsePublishedDashboard(json: String): PublishedDashboard {
 fun parseDashboardDocument(json: String): DashboardDocument {
     val root = JSONObject(json)
     val schemaVersion = root.getInt("schemaVersion")
-    require(schemaVersion in 1..4) { "Dashboard-Schema wird nicht unterstützt" }
+    require(schemaVersion in 1..5) { "Dashboard-Schema wird nicht unterstützt" }
     val settingsJson = root.getJSONObject("settings")
     val settings = DashboardSettings(
         configPollSeconds = settingsJson.optInt("configPollSeconds", 30).coerceAtLeast(10),
@@ -118,6 +121,7 @@ fun parseDashboardDocument(json: String): DashboardDocument {
                 x = item.optInt("x").coerceAtLeast(0), y = item.optInt("y").coerceAtLeast(0),
                 width = item.optInt("width", 1).coerceAtLeast(1), height = item.optInt("height", 1).coerceAtLeast(1),
                 staticValue = item.optionalString("staticValue"), imageUrl = item.optionalString("imageUrl"),
+                slideshowSeconds = item.optInt("slideshowSeconds", 10).coerceIn(0, 3600), imageFit = item.optString("imageFit", "cover"), showCaption = item.optBoolean("showCaption", true),
                 dataSourceId = item.optionalString("dataSourceId"), jsonPath = item.optionalString("jsonPath"),
                 format = item.optionalString("format"), suffix = item.optionalString("suffix"),
                 min = if (item.has("min")) item.optDouble("min") else null, max = if (item.has("max")) item.optDouble("max") else null,

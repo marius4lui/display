@@ -5,7 +5,7 @@ import { placementIsFree } from "../../lib/dashboard";
 import { Icon, WidgetIcon } from "./Icons";
 import { RuleEditor } from "./RuleEditor";
 
-const dataTypes: Widget["type"][] = ["value", "weather", "metric", "status", "list", "chart", "gauge"];
+const dataTypes: Widget["type"][] = ["immich_album", "value", "weather", "metric", "status", "list", "chart", "gauge"];
 
 function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return <label className="color-field">
@@ -46,6 +46,7 @@ export function Inspector({ document, page, selected, onPatch, onDelete, onDupli
         <h3>Inhalt</h3>
         {selected.type === "text" && <label>Text<textarea value={selected.staticValue ?? ""} onChange={(event) => onPatch({ staticValue: event.target.value })}/></label>}
         {selected.type === "image" && <label>Bild-URL<input value={selected.imageUrl ?? ""} onChange={(event) => onPatch({ imageUrl: event.target.value })}/></label>}
+        {selected.type === "immich_album" && <p className="section-note">Wähle unten eine Immich-Album-Datenquelle. Im Player kann direkt im Widget gewischt werden.</p>}
         {selected.type === "clock" && <p className="section-note">Die Uhr verwendet automatisch die lokale Gerätezeit.</p>}
         {selected.type === "button" && <>
           <label>Beschriftung<input value={selected.buttonLabel ?? ""} onChange={(event) => onPatch({ buttonLabel: event.target.value })}/></label>
@@ -75,6 +76,7 @@ export function Inspector({ document, page, selected, onPatch, onDelete, onDupli
         {selected.type === "list" && <><label>Titelpfad<input className="mono-input" value={selected.listTitlePath ?? ""} onChange={(event) => onPatch({ listTitlePath: event.target.value })}/></label><label>Untertitelpfad<input className="mono-input" value={selected.listSubtitlePath ?? ""} onChange={(event) => onPatch({ listSubtitlePath: event.target.value })}/></label><label>Maximale Einträge<input type="number" min="1" value={selected.maxItems ?? 5} onChange={(event) => onPatch({ maxItems: Number(event.target.value) })}/></label></>}
         {selected.type === "gauge" && <div className="control-pair"><label>Minimum<input type="number" value={selected.min ?? 0} onChange={(event) => onPatch({ min: Number(event.target.value) })}/></label><label>Maximum<input type="number" value={selected.max ?? 100} onChange={(event) => onPatch({ max: Number(event.target.value) })}/></label></div>}
         {selected.type === "chart" && <><label>Diagramm<select value={selected.chartType ?? "line"} onChange={(event) => onPatch({ chartType: event.target.value as Widget["chartType"] })}><option value="line">Linie</option><option value="bar">Balken</option><option value="sparkline">Sparkline</option></select></label><label>Historie (Tage)<input type="number" min="1" value={selected.historyDays ?? 1} onChange={(event) => onPatch({ historyDays: Number(event.target.value) })}/></label></>}
+        {selected.type === "immich_album" && <><label>Automatisch wechseln (Sekunden)<input type="number" min="0" max="3600" value={selected.slideshowSeconds ?? 10} onChange={(event) => onPatch({ slideshowSeconds: Math.max(0, Number(event.target.value)) })}/></label><label>Bildanpassung<select value={selected.imageFit ?? "cover"} onChange={(event) => onPatch({ imageFit: event.target.value as Widget["imageFit"] })}><option value="cover">Ausfüllen</option><option value="contain">Vollständig anzeigen</option></select></label><label className="switch-row"><span><strong>Bildunterschrift</strong><small>Dateiname oder Immich-Beschreibung anzeigen</small></span><input type="checkbox" checked={selected.showCaption !== false} onChange={(event) => onPatch({ showCaption: event.target.checked })}/></label></>}
       </section>}
 
       <section className="inspector-section">

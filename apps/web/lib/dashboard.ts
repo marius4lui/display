@@ -1,4 +1,4 @@
-export type WidgetType = "text" | "clock" | "image" | "value" | "weather" | "metric" | "status" | "list" | "chart" | "gauge" | "button";
+export type WidgetType = "text" | "clock" | "image" | "immich_album" | "value" | "weather" | "metric" | "status" | "list" | "chart" | "gauge" | "button";
 export type ErrorBehavior = "stale" | "empty" | "error";
 export type RuleOperator = ">" | ">=" | "<" | "<=" | "=" | "!=" | "contains" | "exists";
 export interface ConditionalRule {
@@ -37,11 +37,18 @@ export interface N8nDataSource extends Omit<RestDataSource, "type"> {
   resource: "executions" | "workflow_status";
   workflowId?: string;
 }
+export interface ImmichDataSource extends Omit<RestDataSource, "type"> {
+  type: "immich";
+  integrationId: string;
+  resource: "album";
+  albumId: string;
+  maxAssets?: number;
+}
 export interface ActionResponseDataSource extends Omit<RestDataSource, "type"> {
   type: "action_response";
   actionId: string;
 }
-export type DataSource = RestDataSource | HomeAssistantDataSource | N8nDataSource | ActionResponseDataSource;
+export type DataSource = RestDataSource | HomeAssistantDataSource | N8nDataSource | ImmichDataSource | ActionResponseDataSource;
 
 export interface ActionTarget {
   entityId?: string[];
@@ -73,6 +80,9 @@ export interface Widget {
   height: number;
   staticValue?: string;
   imageUrl?: string;
+  slideshowSeconds?: number;
+  imageFit?: "cover" | "contain";
+  showCaption?: boolean;
   dataSourceId?: string;
   jsonPath?: string;
   format?: "text" | "number" | "date" | "temperature";
@@ -117,7 +127,7 @@ export interface PageNavigation {
 }
 
 export interface DashboardDocument {
-  schemaVersion: 4;
+  schemaVersion: 5;
   name: string;
   settings: {
     configPollSeconds: number;
@@ -134,6 +144,7 @@ export interface DashboardDocument {
 }
 
 export type LegacyDashboardDocument =
+  | (Omit<DashboardDocument, "schemaVersion"> & { schemaVersion: 4 })
   | (Omit<DashboardDocument, "schemaVersion" | "actions"> & { schemaVersion: 3 })
   | (Omit<DashboardDocument, "schemaVersion" | "pages" | "pageNavigation" | "actions"> & { schemaVersion: 1 | 2; widgets: Widget[] });
 
@@ -143,7 +154,7 @@ const widget = (type: WidgetType, title: string, x: number, y: number, width: nu
 });
 
 export const blankDashboard = (): DashboardDocument => ({
-  schemaVersion: 4,
+  schemaVersion: 5,
   name: "Mein Dashboard",
   settings: { configPollSeconds: 30, dataPollSeconds: 300, columns: 12, rows: 8, background: "#090b12", foreground: "#f6f7fb" },
   dataSources: [],
@@ -175,13 +186,14 @@ export function addDefaultWeatherWidgets(document: DashboardDocument): Dashboard
 }
 
 export function normalizeDashboard(input: DashboardDocument | LegacyDashboardDocument): DashboardDocument {
-  if (input.schemaVersion === 4) return input;
-  if (input.schemaVersion === 3) return { ...input, schemaVersion: 4, actions: [] };
-  if (input.schemaVersion === 2) return { ...(input as unknown as DashboardDocument), schemaVersion: 4, actions: [] };
+  if (input.schemaVersion === 5) return input;
+  if (input.schemaVersion === 4) return { ...input, schemaVersion: 5 };
+  if (input.schemaVersion === 3) return { ...input, schemaVersion: 5, actions: [] };
+  if (input.schemaVersion === 2) return { ...(input as unknown as DashboardDocument), schemaVersion: 5, actions: [] };
   const { widgets, ...rest } = input;
   return {
     ...rest,
-    schemaVersion: 4,
+    schemaVersion: 5,
     actions: [],
     pages: [{ id: crypto.randomUUID(), name: "Seite 1", widgets }],
     pageNavigation: { visible: true, x: 4, y: 7, width: 4, height: 1, style: { background: "#151b2b", foreground: "#f6f7fb", accent: "#7c5cff", align: "center" } },
@@ -202,7 +214,7 @@ export function placementIsFree(document: DashboardDocument, page: DashboardPage
 
 export function createWidget(type: WidgetType, index: number): Widget {
   const defaults: Record<WidgetType, Partial<Widget>> = {
-    text: { title: "Text", staticValue: "Neuer Text" }, clock: { title: "Uhrzeit" }, image: { title: "Bild", imageUrl: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=1200" }, value: { title: "API-Wert", jsonPath: "data.value", format: "text" }, weather: { title: "Wetter", jsonPath: "current.temperature_2m", format: "temperature", suffix: "°C" },
+    text: { title: "Text", staticValue: "Neuer Text" }, clock: { title: "Uhrzeit" }, image: { title: "Bild", imageUrl: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=1200" }, immich_album: { title: "Immich Album", slideshowSeconds: 10, imageFit: "cover", showCaption: true }, value: { title: "API-Wert", jsonPath: "data.value", format: "text" }, weather: { title: "Wetter", jsonPath: "current.temperature_2m", format: "temperature", suffix: "°C" },
     metric: { title: "Metrik", jsonPath: "value", format: "number" }, status: { title: "Status", jsonPath: "status", statusMap: { online: { text: "Online", icon: "●", color: "#62de9a" }, offline: { text: "Offline", icon: "●", color: "#ff8296" } } },
     list: { title: "Liste", jsonPath: "items", listTitlePath: "name", listSubtitlePath: "value", maxItems: 5 },
     chart: { title: "Verlauf", jsonPath: "value", chartType: "line", historyDays: 1 },

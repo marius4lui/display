@@ -18,9 +18,45 @@ function Clock() {
   return <>{now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}</>;
 }
 
+type AlbumAsset = { id: string; originalFileName?: string; fileCreatedAt?: string; description?: string };
+
+function ImmichAlbumWidget({ widget, raw }: { widget: Widget; raw: unknown }) {
+  const assets = raw && typeof raw === "object" && Array.isArray((raw as { assets?: unknown[] }).assets)
+    ? (raw as { assets: AlbumAsset[] }).assets.filter((asset) => asset && typeof asset.id === "string") : [];
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const swipe = useRef<{ x: number; y: number } | null>(null);
+  const current = assets[index % Math.max(assets.length, 1)];
+  const change = (direction: number) => setIndex((value) => assets.length ? (value + direction + assets.length) % assets.length : 0);
+  useEffect(() => { setIndex((value) => assets.length ? Math.min(value, assets.length - 1) : 0); }, [assets.length]);
+  useEffect(() => {
+    if (paused || assets.length < 2 || (widget.slideshowSeconds ?? 10) <= 0) return;
+    const timer = window.setInterval(() => change(1), Math.max(2, widget.slideshowSeconds ?? 10) * 1000);
+    return () => window.clearInterval(timer);
+  }, [paused, assets.length, widget.slideshowSeconds]);
+  useEffect(() => {
+    if (assets.length < 2 || !widget.dataSourceId) return;
+    const next = assets[(index + 1) % assets.length];
+    const image = new Image(); image.src = `/api/player/images/${encodeURIComponent(widget.dataSourceId)}?assetId=${encodeURIComponent(next.id)}`;
+  }, [assets, index, widget.dataSourceId]);
+  if (!assets.length || !current || !widget.dataSourceId) return <span className="immich-empty">Album ist leer oder noch nicht geladen.</span>;
+  const caption = current.description || current.originalFileName || "Foto";
+  return <div className="immich-album" onClick={(event) => { event.stopPropagation(); setPaused((value) => !value); }} onPointerDown={(event) => { event.stopPropagation(); swipe.current = { x: event.clientX, y: event.clientY }; }} onPointerUp={(event) => {
+    event.stopPropagation(); const start = swipe.current; swipe.current = null; if (!start) return;
+    const dx = event.clientX - start.x, dy = event.clientY - start.y;
+    if (Math.abs(dx) > 35 && Math.abs(dx) > Math.abs(dy) * 1.25) change(dx < 0 ? 1 : -1);
+  }}>
+    <img src={`/api/player/images/${encodeURIComponent(widget.dataSourceId)}?assetId=${encodeURIComponent(current.id)}`} alt={caption} draggable={false} style={{ objectFit: widget.imageFit ?? "cover" }}/>
+    {widget.showCaption !== false && <span className="immich-caption">{caption}</span>}
+    <span className="immich-counter">{index + 1} / {assets.length}{paused ? " · Pause" : ""}</span>
+    {assets.length > 1 && <><button type="button" className="immich-prev" aria-label="Vorheriges Foto" onClick={(event) => { event.stopPropagation(); change(-1); }}>‹</button><button type="button" className="immich-next" aria-label="Nächstes Foto" onClick={(event) => { event.stopPropagation(); change(1); }}>›</button></>}
+  </div>;
+}
+
 function widgetContent(widget: Widget, raw: unknown, history: unknown[]): ReactNode {
   if (widget.type === "clock") return <Clock />;
   if (widget.type === "image") return widget.imageUrl ? <img src={widget.imageUrl} alt={widget.title} /> : "Bild-URL fehlt";
+  if (widget.type === "immich_album") return <ImmichAlbumWidget widget={widget} raw={raw} />;
   if (widget.type === "button") return <>{widget.icon ? `${widget.icon} ` : ""}{raw ? String(raw) : widget.buttonLabel ?? widget.title}</>;
   if (["value", "metric"].includes(widget.type)) return formatValue(raw, widget.format, widget.suffix);
   if (widget.type === "weather") return <span className="widget-weather"><i>☀</i>{formatValue(raw, widget.format, widget.suffix)}</span>;

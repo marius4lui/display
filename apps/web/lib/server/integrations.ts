@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { DashboardAction, HomeAssistantDataSource, N8nDataSource } from "../dashboard";
+import type { DashboardAction, HomeAssistantDataSource, ImmichDataSource, N8nDataSource } from "../dashboard";
 import { decryptSecret, encryptSecret } from "./secrets";
 import { limitedResponse, safeFetch } from "./safe-fetch";
 import { homeAssistantSourceRequest, oauthRefreshForm, providerActionRequest } from "./provider-request";
@@ -10,7 +10,7 @@ export type IntegrationCredentials = {
   headerName?: string; headerValue?: string; username?: string; password?: string; jwt?: string;
 };
 export type IntegrationRow = {
-  id: string; owner_id: string; provider: "n8n" | "home_assistant"; base_url: string; status: string;
+  id: string; owner_id: string; provider: "n8n" | "home_assistant" | "immich"; base_url: string; status: string;
   credential_ciphertext: string | null; credential_iv: string | null; credential_auth_tag: string | null;
   metadata: Record<string, unknown>;
 };
@@ -44,10 +44,11 @@ function authHeaders(row: IntegrationRow) {
   const secret = credentials(row); const headers: Record<string, string> = {};
   if (row.provider === "home_assistant" && secret.accessToken) headers.Authorization = `Bearer ${secret.accessToken}`;
   if (row.provider === "n8n" && secret.apiKey) headers["X-N8N-API-KEY"] = secret.apiKey;
+  if (row.provider === "immich" && secret.apiKey) headers["x-api-key"] = secret.apiKey;
   return headers;
 }
 export async function testIntegration(row: IntegrationRow) {
-  const url = row.provider === "home_assistant" ? `${row.base_url}/api/` : credentials(row).apiKey ? `${row.base_url}/api/v1/workflows?limit=1` : `${row.base_url}/healthz`;
+  const url = row.provider === "home_assistant" ? `${row.base_url}/api/` : row.provider === "immich" ? `${row.base_url}/api-keys/me` : credentials(row).apiKey ? `${row.base_url}/api/v1/workflows?limit=1` : `${row.base_url}/healthz`;
   const response = await safeFetch(url, { headers: authHeaders(row), expectedOrigin: new URL(row.base_url).origin });
   await limitedResponse(response);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -56,6 +57,7 @@ export async function testIntegration(row: IntegrationRow) {
 export async function discoverIntegration(row: IntegrationRow, resource: string) {
   const routes: Record<string, string> = row.provider === "n8n"
     ? { workflows: "/api/v1/workflows?active=true&limit=100", executions: "/api/v1/executions?limit=20" }
+    : row.provider === "immich" ? { albums: "/albums" }
     : { states: "/api/states", services: "/api/services", calendars: "/api/calendars" };
   const path = routes[resource]; if (!path) throw new Error("Nicht unterstützte Discovery-Ressource");
   const response = await safeFetch(`${row.base_url}${path}`, { headers: authHeaders(row), expectedOrigin: new URL(row.base_url).origin });
@@ -114,4 +116,70 @@ export async function executeN8nSource(row: IntegrationRow, source: N8nDataSourc
   const { text } = await limitedResponse(response); if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const value = JSON.parse(text);
   return { value: source.resource === "workflow_status" ? value?.data?.[0] ?? null : value };
+}
+
+export type ImmichAsset = {
+  id: string;
+  type: "IMAGE";
+  originalFileName: string;
+  fileCreatedAt?: string;
+  thumbhash?: string | null;
+  description?: string;
+};
+
+export async function executeImmichSource(row: IntegrationRow, source: ImmichDataSource) {
+  const limit = Math.max(1, Math.min(1000, source.maxAssets ?? 500));
+  const items: Array<Record<string, unknown>> = [];
+  for (let page = 1; items.length < limit; page++) {
+    const response = await safeFetch(`${row.base_url}/search/metadata`, {
+      method: "POST",
+      headers: { ...authHeaders(row), "Content-Type": "application/json" },
+      body: JSON.stringify({ albumIds: [source.albumId], type: "IMAGE", order: "desc", page, size: Math.min(100, limit - items.length) }),
+      expectedOrigin: new URL(row.base_url).origin,
+    });
+    const { text } = await limitedResponse(response); if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const assets = (JSON.parse(text) as { assets?: { items?: Array<Record<string, unknown>>; nextPage?: string | null } }).assets;
+    items.push(...(assets?.items ?? []));
+    if (!assets?.nextPage || !assets.items?.length) break;
+  }
+  const assets: ImmichAsset[] = items.slice(0, limit).flatMap((asset) => {
+    if (asset.type !== "IMAGE" || typeof asset.id !== "string") return [];
+    const exif = asset.exifInfo && typeof asset.exifInfo === "object" ? asset.exifInfo as Record<string, unknown> : undefined;
+    return [{
+      id: asset.id,
+      type: "IMAGE",
+      originalFileName: String(asset.originalFileName ?? "Foto"),
+      fileCreatedAt: typeof asset.fileCreatedAt === "string" ? asset.fileCreatedAt : undefined,
+      thumbhash: typeof asset.thumbhash === "string" ? asset.thumbhash : null,
+      description: typeof exif?.description === "string" ? exif.description : undefined,
+    }];
+  });
+  return { value: { albumId: source.albumId, assets } };
+}
+
+export async function fetchImmichThumbnail(row: IntegrationRow, assetId: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(assetId)) throw new Error("Ungültige Asset-ID");
+  const response = await safeFetch(`${row.base_url}/assets/${encodeURIComponent(assetId)}/thumbnail?size=preview`, {
+    headers: authHeaders(row), expectedOrigin: new URL(row.base_url).origin,
+  });
+  if (!response.ok) { await response.body?.cancel(); throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status }); }
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!contentType.startsWith("image/")) { await response.body?.cancel(); throw new Error("Immich lieferte kein Bild"); }
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > 10 * 1024 * 1024) { await response.body?.cancel(); throw new Error("Bild überschreitet 10 MB"); }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.length > 10 * 1024 * 1024) throw new Error("Bild überschreitet 10 MB");
+  return { bytes, contentType };
+}
+
+export async function immichAssetBelongsToAlbum(row: IntegrationRow, albumId: string, assetId: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(albumId) || !/^[0-9a-f-]{36}$/i.test(assetId)) return false;
+  const response = await safeFetch(`${row.base_url}/search/metadata`, {
+    method: "POST", headers: { ...authHeaders(row), "Content-Type": "application/json" },
+    body: JSON.stringify({ albumIds: [albumId], id: assetId, type: "IMAGE", page: 1, size: 1 }),
+    expectedOrigin: new URL(row.base_url).origin,
+  });
+  const { text } = await limitedResponse(response); if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const payload = JSON.parse(text) as { assets?: { items?: Array<{ id?: string }> } };
+  return payload.assets?.items?.some((asset) => asset.id === assetId) === true;
 }
