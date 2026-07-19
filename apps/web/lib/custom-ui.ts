@@ -16,10 +16,30 @@ export interface CustomUiNode {
   style?: CustomUiStyle; children?: CustomUiNode[];
 }
 
+export interface CustomUiTheme {
+  background?: string;
+  foreground?: string;
+  surface?: string;
+  surfaceMuted?: string;
+  accent?: string;
+  radius?: number;
+  padding?: number;
+  gap?: number;
+  shadow?: "none" | "soft" | "strong";
+  fontFamily?: "system" | "rounded" | "mono";
+}
+
 export interface CustomUiDocument {
   version: 1; enabled: boolean;
-  theme?: { background?: string; foreground?: string; accent?: string; fontFamily?: "system" | "rounded" | "mono" };
-  pages: Record<string, CustomUiNode>;
+  theme?: CustomUiTheme;
+  pages?: Record<string, CustomUiNode>;
+}
+
+export function starterThemeOnly(): CustomUiDocument {
+  return { version: 1, enabled: true, theme: {
+    background: "#F4EFE6", foreground: "#24221F", surface: "#FFFCF7", surfaceMuted: "#EAE2D6", accent: "#B77952",
+    radius: 26, padding: 12, gap: 10, shadow: "soft", fontFamily: "system",
+  } };
 }
 
 export function starterCustomUi(pageId: string): CustomUiDocument {
@@ -44,8 +64,9 @@ export function validateCustomUi(value: unknown, pageIds?: Set<string>): string[
   const ui = value as Record<string, unknown>;
   if (ui.version !== 1) errors.push("customUi.version muss 1 sein.");
   if (typeof ui.enabled !== "boolean") errors.push("customUi.enabled muss true oder false sein.");
-  if (!ui.pages || typeof ui.pages !== "object" || Array.isArray(ui.pages)) return [...errors, "customUi.pages muss ein Objekt sein."];
-  const pages = ui.pages as Record<string, unknown>;
+  if (ui.pages !== undefined && (typeof ui.pages !== "object" || ui.pages === null || Array.isArray(ui.pages))) return [...errors, "customUi.pages muss ein Objekt sein."];
+  const pages = (ui.pages ?? {}) as Record<string, unknown>;
+  if (ui.theme !== undefined && (!ui.theme || typeof ui.theme !== "object" || Array.isArray(ui.theme))) errors.push("customUi.theme muss ein Objekt sein.");
   if (pageIds) for (const id of Object.keys(pages)) if (!pageIds.has(id)) errors.push(`customUi.pages.${id} verweist auf keine Seite.`);
   let count = 0;
   const visit = (raw: unknown, path: string, depth: number) => {

@@ -2,6 +2,7 @@
 
 import { useState, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { type DashboardDocument, type DashboardPage, type Widget } from "../../lib/dashboard";
+import type { CustomUiTheme } from "../../lib/custom-ui";
 import { DashboardRenderer, DisplayWidget } from "../display/DashboardRenderer";
 import { Icon } from "./Icons";
 
@@ -15,12 +16,12 @@ const devices: Record<PreviewDevice, { label: string; size: string; ratio: strin
   mobile: { label: "Mobile", size: "390 × 844", ratio: "390 / 844" },
 };
 
-function CanvasWidget({ widget, data, selected, interactive, onSelect, onDragStart, onDragEnd, onResizeStart }: {
-  widget: Widget; data: Record<string, unknown>; selected: boolean; interactive: boolean;
+function CanvasWidget({ widget, data, theme, selected, interactive, onSelect, onDragStart, onDragEnd, onResizeStart }: {
+  widget: Widget; data: Record<string, unknown>; theme?: CustomUiTheme; selected: boolean; interactive: boolean;
   onSelect: () => void; onDragStart: (event: DragEvent<HTMLElement>) => void; onDragEnd: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>, direction: ResizeDirection) => void;
 }) {
-  return <DisplayWidget widget={widget} runtime={{ value: data[widget.dataSourceId ?? ""] }} className={`${selected ? "selected" : ""}${interactive ? " editing-widget" : " preview-only"}`} articleProps={{ draggable: interactive, onDragStart, onDragEnd, onClick: interactive ? onSelect : undefined }}>
+  return <DisplayWidget widget={widget} theme={theme} runtime={{ value: data[widget.dataSourceId ?? ""] }} className={`${selected ? "selected" : ""}${interactive ? " editing-widget" : " preview-only"}`} articleProps={{ draggable: interactive, onDragStart, onDragEnd, onClick: interactive ? onSelect : undefined }}>
     {interactive && selected && (["n", "ne", "e", "se", "s", "sw", "w", "nw"] as ResizeDirection[]).map((direction) => <button draggable={false} aria-label={`Größe ${direction}`} className={`resize-handle resize-${direction}`} key={direction} onDragStart={(event) => event.preventDefault()} onPointerDown={(event) => onResizeStart(event, direction)}/>)}
   </DisplayWidget>;
 }
@@ -37,6 +38,7 @@ export function CanvasStage({ document, page, selectedId, data, mode, device, le
   onSwitchPage: (direction: number) => void;
 }) {
   const [shareOpen, setShareOpen] = useState(false);
+  const theme = document.customUi?.enabled ? document.customUi.theme : undefined;
   return <section className={`canvas-workspace ${mode === "preview" ? "preview-mode" : ""}`}>
     <header className="canvas-toolbar">
       <div className="toolbar-group">
@@ -63,8 +65,8 @@ export function CanvasStage({ document, page, selectedId, data, mode, device, le
         {mode === "preview" ? <DashboardRenderer document={document} pageIndex={document.pages.findIndex((item) => item.id === page.id)} runtime={Object.fromEntries(Object.entries(data).map(([id, value]) => [id, { value }]))} onPageChange={(index) => {
           const current = document.pages.findIndex((item) => item.id === page.id);
           onSwitchPage(index >= current ? index - current : index + document.pages.length - current);
-        }} /> : <div className="display-grid" onDragOver={onDragOver} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onDragLeave(); }} onDrop={onDrop} style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>
-          {page.widgets.map((widget) => <CanvasWidget key={widget.id} widget={widget} data={data} interactive={mode === "edit"} selected={mode === "edit" && widget.id === selectedId} onSelect={() => onSelect(widget.id)} onDragStart={(event) => onDragStart(event, widget)} onDragEnd={onDragEnd} onResizeStart={(event, direction) => onResizeStart(event, widget, direction)}/>)}
+        }} /> : <div className="display-grid" onDragOver={onDragOver} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onDragLeave(); }} onDrop={onDrop} style={{ background: theme?.background ?? document.settings.background, color: theme?.foreground ?? document.settings.foreground, gap: theme?.gap, padding: theme?.padding, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>
+          {page.widgets.map((widget) => <CanvasWidget key={widget.id} widget={widget} data={data} theme={theme} interactive={mode === "edit"} selected={mode === "edit" && widget.id === selectedId} onSelect={() => onSelect(widget.id)} onDragStart={(event) => onDragStart(event, widget)} onDragEnd={onDragEnd} onResizeStart={(event, direction) => onResizeStart(event, widget, direction)}/>)}
           {mode === "edit" && placement && <div className={`placement-preview${placement.valid ? "" : " invalid"}`} style={{ gridColumn: `${placement.x + 1} / span ${placement.width}`, gridRow: `${placement.y + 1} / span ${placement.height}` }}><span>{placement.valid ? `${placement.width} × ${placement.height}` : "Belegt"}</span></div>}
         </div>}
       </div>

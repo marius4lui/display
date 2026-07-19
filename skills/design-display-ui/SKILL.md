@@ -13,13 +13,14 @@ Create expressive layouts using the project's safe declarative UI format. Never 
 2. Read [references/schema.md](references/schema.md) before generating or editing JSON.
 3. Preserve real page IDs, source IDs, paths, and action IDs exactly. Do not invent bindings unless clearly marked as placeholders.
 4. Design for the target aspect ratio. Prefer a clear hierarchy, restrained color palette, strong contrast, useful whitespace, and glanceable values.
-5. Emit a complete `customUi` object unless the user explicitly requests a fragment.
+5. Emit a complete `customUi` object unless the user explicitly requests a fragment. Omit `pages` for theme-only requests so the existing widget dashboard remains visible.
 6. Check every node recursively against the reference: supported type, allowed fields, maximum depth 20, maximum 500 nodes, and safe image URLs.
 7. If repository access is available, place the object in `DashboardDocument.customUi`, keep `schemaVersion: 6`, and run the project typecheck/tests.
 
 ## Design rules
 
 - Use `column`, `row`, `grid`, and `card` for structure.
+- For colors, rounding, spacing, or shadows only, use the global theme and omit `pages`.
 - Use `value` with `sourceId` and `path` for live data.
 - Use `button` with an existing `actionId` for actions.
 - Keep primary values readable from a distance; use roughly 30–64 px for key metrics on 1080p displays.

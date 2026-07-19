@@ -287,6 +287,7 @@ private fun DashboardScreen(controller: DashboardController) {
                         widget,
                         controller.values[widget.dataSourceId],
                         controller,
+                        dashboard.customUi?.takeIf { it.optBoolean("enabled", false) }?.optJSONObject("theme"),
                         uiScale,
                         Modifier.offset(cellWidth * x, cellHeight * y).size(width, height),
                     )
@@ -415,12 +416,13 @@ private fun CustomUiNodeView(node: JSONObject, controller: DashboardController, 
 }
 
 @Composable
-private fun DashboardWidgetView(widget: DashboardWidget, runtime: RuntimeValue?, controller: DashboardController, uiScale: Float, modifier: Modifier) {
+private fun DashboardWidgetView(widget: DashboardWidget, runtime: RuntimeValue?, controller: DashboardController, theme: JSONObject?, uiScale: Float, modifier: Modifier) {
     val raw = valueAtJsonPath(runtime?.value, widget.jsonPath)
     val rule = firstMatchingRule(raw, widget.conditionalRules)
-    val background = rule?.optString("background")?.takeIf(String::isNotBlank) ?: widget.style.background
-    val foreground = rule?.optString("foreground")?.takeIf(String::isNotBlank) ?: widget.style.foreground
-    val accent = rule?.optString("accent")?.takeIf(String::isNotBlank) ?: widget.style.accent
+    val background = theme?.optString("surface")?.takeIf(String::isNotBlank) ?: rule?.optString("background")?.takeIf(String::isNotBlank) ?: widget.style.background
+    val foreground = theme?.optString("foreground")?.takeIf(String::isNotBlank) ?: rule?.optString("foreground")?.takeIf(String::isNotBlank) ?: widget.style.foreground
+    val accent = theme?.optString("accent")?.takeIf(String::isNotBlank) ?: rule?.optString("accent")?.takeIf(String::isNotBlank) ?: widget.style.accent
+    val radius = (theme?.optDouble("radius", 16.0)?.toFloat() ?: 16f)
     val transition = rememberInfiniteTransition(label = "widget")
     val animated by transition.animateFloat(1f, if (widget.animation == "pulse") .58f else 1f, infiniteRepeatable(tween(1400), RepeatMode.Reverse), label = "alpha")
     val scale by transition.animateFloat(1f, if (widget.animation == "float") 1.035f else 1f, infiniteRepeatable(tween(1700), RepeatMode.Reverse), label = "scale")
@@ -432,7 +434,7 @@ private fun DashboardWidgetView(widget: DashboardWidget, runtime: RuntimeValue?,
         widget.type == "status" -> widget.statusMap?.optJSONObject(raw.toString())?.let { "${it.optString("icon","●")} ${it.optString("text",raw.toString())}" } ?: raw?.toString().orEmpty()
         else -> rule?.optString("text")?.takeIf(String::isNotBlank) ?: widget.staticValue.orEmpty()
     }
-    BoxWithConstraints(modifier.clip(RoundedCornerShape((16f * uiScale).coerceAtLeast(5f).dp)).background(parseColor(background)).alpha(animated).scale(scale)) {
+    BoxWithConstraints(modifier.clip(RoundedCornerShape((radius * uiScale).coerceAtLeast(3f).dp)).background(parseColor(background)).alpha(animated).scale(scale)) {
         val widgetScale = minOf(uiScale, maxWidth / 260.dp, maxHeight / 115.dp).coerceIn(.35f, 1.6f)
         val padding = (18f * widgetScale).coerceIn(4f, 24f).dp
         Box(Modifier.fillMaxSize().padding(padding)) {

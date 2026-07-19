@@ -66,6 +66,12 @@ test("Schema v6 validiert Custom UI und sichere Bild-URLs", () => {
   assert.throws(() => parseDashboardDocument(document), /sichere Player-/);
 });
 
+test("Schema v6 erlaubt Theme-only ohne pages", () => {
+  const document = structuredClone(base);
+  document.customUi = { version: 1, enabled: true, theme: { background: "#f4efe6", foreground: "#24221f", surface: "#fffcf7", accent: "#b77952", radius: 26, shadow: "soft" } };
+  assert.deepEqual(parseDashboardDocument(document).customUi, document.customUi);
+});
+
 test("Custom UI darf nur vorhandene Datenquellen und Aktionen binden", () => {
   const document = structuredClone(base);
   document.customUi = { version: 1, enabled: true, pages: { page: { type: "value", sourceId: "missing", path: "value" } } };

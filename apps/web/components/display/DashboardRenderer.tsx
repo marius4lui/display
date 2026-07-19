@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from "react";
 import { effectiveWidget, formatValue, matchesRule, valueAtPath, type DashboardDocument, type Widget } from "../../lib/dashboard";
-import type { CustomUiNode, CustomUiStyle } from "../../lib/custom-ui";
+import type { CustomUiNode, CustomUiStyle, CustomUiTheme } from "../../lib/custom-ui";
 
 export interface RuntimeState {
   value?: unknown;
@@ -34,11 +34,18 @@ function CustomNode({ node, runtime, onAction }: { node: CustomUiNode; runtime: 
   return <div className={`custom-ui-${node.type}`} style={customStyle(node.style)}>{children}</div>;
 }
 
+function themeShadow(shadow: CustomUiTheme["shadow"]): string | undefined {
+  return shadow === "soft" ? "0 16px 45px #00000018" : shadow === "strong" ? "0 22px 70px #00000038" : shadow === "none" ? "none" : undefined;
+}
+
+function themeFont(theme?: CustomUiTheme): string {
+  return theme?.fontFamily === "mono" ? "ui-monospace, monospace" : theme?.fontFamily === "rounded" ? '"Arial Rounded MT Bold", ui-rounded, sans-serif' : "Inter, system-ui, sans-serif";
+}
+
 function CustomUiRenderer({ document, pageId, runtime, onAction, className, onSwipe }: { document: DashboardDocument; pageId: string; runtime: Record<string, RuntimeState>; onAction?: (widget: Widget) => void; className?: string; onSwipe?: (direction: number) => void }) {
-  const ui = document.customUi!; const root = ui.pages[pageId];
+  const ui = document.customUi!; const root = ui.pages?.[pageId];
   const swipe = useRef<{ x: number; y: number } | null>(null);
-  const fontFamily = ui.theme?.fontFamily === "mono" ? "ui-monospace, monospace" : ui.theme?.fontFamily === "rounded" ? '"Arial Rounded MT Bold", ui-rounded, sans-serif' : "Inter, system-ui, sans-serif";
-  return <div className={`custom-ui-root ${className ?? ""}`} onPointerDown={(event) => { swipe.current = { x: event.clientX, y: event.clientY }; }} onPointerUp={(event) => { const start = swipe.current; swipe.current = null; if (!start || !onSwipe) return; const dx = event.clientX - start.x, dy = event.clientY - start.y; if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) onSwipe(dx < 0 ? 1 : -1); }} style={{ background: ui.theme?.background ?? document.settings.background, color: ui.theme?.foreground ?? document.settings.foreground, fontFamily, "--custom-accent": ui.theme?.accent ?? "#8b7cff" } as CSSProperties}>
+  return <div className={`custom-ui-root ${className ?? ""}`} onPointerDown={(event) => { swipe.current = { x: event.clientX, y: event.clientY }; }} onPointerUp={(event) => { const start = swipe.current; swipe.current = null; if (!start || !onSwipe) return; const dx = event.clientX - start.x, dy = event.clientY - start.y; if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) onSwipe(dx < 0 ? 1 : -1); }} style={{ background: ui.theme?.background ?? document.settings.background, color: ui.theme?.foreground ?? document.settings.foreground, fontFamily: themeFont(ui.theme), "--custom-accent": ui.theme?.accent ?? "#8b7cff" } as CSSProperties}>
     {root ? <CustomNode node={root} runtime={runtime} onAction={onAction} /> : <div className="custom-ui-missing">Für diese Seite fehlt ein Custom-UI-Layout.</div>}
   </div>;
 }
@@ -121,10 +128,11 @@ function widgetContent(widget: Widget, raw: unknown, history: unknown[]): ReactN
   return widget.staticValue ?? widget.title;
 }
 
-export function DisplayWidget({ widget, runtime, className = "", children, articleProps, onAction }: { widget: Widget; runtime?: RuntimeState; className?: string; children?: ReactNode; articleProps?: HTMLAttributes<HTMLElement>; onAction?: (widget: Widget) => void }) {
+export function DisplayWidget({ widget, runtime, theme, className = "", children, articleProps, onAction }: { widget: Widget; runtime?: RuntimeState; theme?: CustomUiTheme; className?: string; children?: ReactNode; articleProps?: HTMLAttributes<HTMLElement>; onAction?: (widget: Widget) => void }) {
   const raw = valueAtPath(runtime?.value, widget.jsonPath);
   const rule = widget.conditionalRules?.find((candidate) => matchesRule(raw, candidate));
-  const effective = effectiveWidget(widget, raw);
+  const baseEffective = effectiveWidget(widget, raw);
+  const effective = theme ? { ...baseEffective, style: { ...baseEffective.style, background: theme.surface ?? baseEffective.style.background, foreground: theme.foreground ?? baseEffective.style.foreground, accent: theme.accent ?? baseEffective.style.accent } } : baseEffective;
   const hasError = !!runtime?.error;
   const hideValue = hasError && effective.errorBehavior === "empty";
   const showError = hasError && effective.errorBehavior === "error";
@@ -132,7 +140,7 @@ export function DisplayWidget({ widget, runtime, className = "", children, artic
   const ruled = rule?.text || rule?.icon ? <>{rule.icon ? `${rule.icon} ` : ""}{rule.text ?? rendered}</> : rendered;
   const content = showError ? runtime?.error : hideValue ? "—" : ruled;
   const fontScale = Math.max(25, Math.min(300, effective.style.fontScale ?? 100)) / 100;
-  return <article {...articleProps} role={effective.type === "button" ? "button" : articleProps?.role} tabIndex={effective.type === "button" ? 0 : articleProps?.tabIndex} onClick={effective.type === "button" && onAction ? () => onAction(effective) : articleProps?.onClick} onKeyDown={effective.type === "button" && onAction ? (event) => { if (event.key === "Enter" || event.key === " ") onAction(effective); } : articleProps?.onKeyDown} data-widget-type={effective.type} data-vertical-align={effective.style.verticalAlign ?? "center"} className={`canvas-widget animation-${effective.animation ?? "none"}${runtime?.stale ? " is-stale" : ""}${hasError ? " has-error" : ""} ${className}`} style={{ gridColumn: `${effective.x + 1} / span ${effective.width}`, gridRow: `${effective.y + 1} / span ${effective.height}`, background: effective.style.background, color: effective.style.foreground, textAlign: effective.style.align, "--widget-font-scale": fontScale } as CSSProperties}>
+  return <article {...articleProps} role={effective.type === "button" ? "button" : articleProps?.role} tabIndex={effective.type === "button" ? 0 : articleProps?.tabIndex} onClick={effective.type === "button" && onAction ? () => onAction(effective) : articleProps?.onClick} onKeyDown={effective.type === "button" && onAction ? (event) => { if (event.key === "Enter" || event.key === " ") onAction(effective); } : articleProps?.onKeyDown} data-widget-type={effective.type} data-vertical-align={effective.style.verticalAlign ?? "center"} className={`canvas-widget animation-${effective.animation ?? "none"}${runtime?.stale ? " is-stale" : ""}${hasError ? " has-error" : ""} ${className}`} style={{ gridColumn: `${effective.x + 1} / span ${effective.width}`, gridRow: `${effective.y + 1} / span ${effective.height}`, background: theme?.surface ?? effective.style.background, color: theme?.foreground ?? effective.style.foreground, borderRadius: theme?.radius, boxShadow: themeShadow(theme?.shadow), textAlign: effective.style.align, "--widget-font-scale": fontScale, "--widget-accent": theme?.accent ?? effective.style.accent } as CSSProperties}>
     <small>{effective.title}</small><div className="widget-value">{content}</div>
     {runtime?.stale && <span className="widget-state">Veraltet</span>}
     {children}
@@ -150,14 +158,15 @@ export function DashboardRenderer({ document, pageIndex, runtime, onPageChange, 
   const swipe = useRef<{ x: number; y: number } | null>(null);
   const page = document.pages[Math.max(0, Math.min(pageIndex, document.pages.length - 1))] ?? document.pages[0];
   const change = (direction: number) => onPageChange((pageIndex + direction + document.pages.length) % document.pages.length);
-  if (document.customUi?.enabled) return <CustomUiRenderer document={document} pageId={page.id} runtime={runtime} onAction={onAction} className={className} onSwipe={document.pages.length > 1 ? change : undefined} />;
+  const theme = document.customUi?.enabled ? document.customUi.theme : undefined;
+  if (document.customUi?.enabled && document.customUi.pages?.[page.id]) return <CustomUiRenderer document={document} pageId={page.id} runtime={runtime} onAction={onAction} className={className} onSwipe={document.pages.length > 1 ? change : undefined} />;
   return <div className={`display-grid ${className}`} onPointerDown={(event) => { swipe.current = { x: event.clientX, y: event.clientY }; }} onPointerUp={(event) => {
     const start = swipe.current; swipe.current = null; if (!start || document.pages.length < 2) return;
     const dx = event.clientX - start.x, dy = event.clientY - start.y;
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) change(dx < 0 ? 1 : -1);
-  }} style={{ background: document.settings.background, color: document.settings.foreground, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>
-    {page.widgets.map((widget) => <DisplayWidget key={widget.id} widget={widget} runtime={runtime[widget.type === "button" ? `action:${widget.actionId}` : widget.dataSourceId ?? ""]} onAction={onAction} />)}
-    {document.pages.length > 1 && document.pageNavigation.visible && <div className="page-navigation" style={{ gridColumn: `${document.pageNavigation.x + 1} / span ${document.pageNavigation.width}`, gridRow: `${document.pageNavigation.y + 1} / span ${document.pageNavigation.height}`, background: document.pageNavigation.style.background, color: document.pageNavigation.style.foreground }}>
+  }} style={{ background: theme?.background ?? document.settings.background, color: theme?.foreground ?? document.settings.foreground, fontFamily: themeFont(theme), gap: theme?.gap, padding: theme?.padding, gridTemplateColumns: `repeat(${document.settings.columns}, 1fr)`, gridTemplateRows: `repeat(${document.settings.rows}, 1fr)` }}>
+    {page.widgets.map((widget) => <DisplayWidget key={widget.id} widget={widget} theme={theme} runtime={runtime[widget.type === "button" ? `action:${widget.actionId}` : widget.dataSourceId ?? ""]} onAction={onAction} />)}
+    {document.pages.length > 1 && document.pageNavigation.visible && <div className="page-navigation" style={{ gridColumn: `${document.pageNavigation.x + 1} / span ${document.pageNavigation.width}`, gridRow: `${document.pageNavigation.y + 1} / span ${document.pageNavigation.height}`, background: theme?.surfaceMuted ?? theme?.surface ?? document.pageNavigation.style.background, color: theme?.foreground ?? document.pageNavigation.style.foreground, borderRadius: theme?.radius, boxShadow: themeShadow(theme?.shadow) }}>
       <button onClick={() => change(-1)} aria-label="Vorherige Seite">‹</button><span>{pageIndex + 1} / {document.pages.length}</span><button onClick={() => change(1)} aria-label="Nächste Seite">›</button>
     </div>}
   </div>;

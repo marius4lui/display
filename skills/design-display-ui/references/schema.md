@@ -1,6 +1,6 @@
 # display Custom UI schema v1
 
-The dashboard uses `schemaVersion: 6` and an optional `customUi` object:
+The dashboard uses `schemaVersion: 6` and an optional `customUi` object. `pages` itself is optional: omit it to apply the theme to the existing widget dashboard without replacing its layout.
 
 ```json
 {
@@ -9,14 +9,19 @@ The dashboard uses `schemaVersion: 6` and an optional `customUi` object:
   "theme": {
     "background": "#070912",
     "foreground": "#f8f9ff",
+    "surface": "#fffcf7",
+    "surfaceMuted": "#eae2d6",
     "accent": "#8b7cff",
+    "radius": 26,
+    "padding": 12,
+    "gap": 10,
+    "shadow": "soft",
     "fontFamily": "system"
-  },
-  "pages": {
-    "REAL_PAGE_ID": { "type": "column", "children": [] }
   }
 }
 ```
+
+Add `"pages": { "REAL_PAGE_ID": { "type": "column", "children": [] } }` only when replacing a page with a fully custom layout.
 
 ## Nodes
 
