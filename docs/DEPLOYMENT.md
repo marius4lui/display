@@ -116,6 +116,27 @@ Regelmäßig sichern:
 
 Backups sind erst belastbar, wenn die Wiederherstellung auf einem getrennten System getestet wurde. Datenbank und Master-Key müssen aus demselben Sicherungsstand stammen.
 
+## Authentik über OIDC
+
+In Authentik einen OAuth2/OpenID-Provider mit Authorization Code, einer vertraulichen Client-ID samt Secret und den Scopes openid, profile und email anlegen. Als Redirect-URI exakt folgende URL hinterlegen:
+
+```text
+https://display.qhrd.online/api/auth/oidc/callback
+```
+
+Danach display konfigurieren:
+
+```dotenv
+OIDC_ISSUER=https://auth.example.com/application/o/display/
+OIDC_CLIENT_ID=display
+OIDC_CLIENT_SECRET=replace-me
+OIDC_PROVIDER_NAME=Authentik
+LOCAL_AUTH_ENABLED=false
+OIDC_ALLOW_SIGNUP=true
+```
+
+LOCAL_AUTH_ENABLED=false deaktiviert sowohl Passwort-Login als auch Registrierung in UI und API. OIDC-Benutzer werden ausschließlich anhand einer von Authentik als verifiziert gemeldeten, normalisierten E-Mail einem vorhandenen Supabase-Benutzer zugeordnet. Mit OIDC_ALLOW_SIGNUP=false wird kein neuer Supabase-Benutzer angelegt, wenn noch kein Account mit dieser E-Mail existiert.
+
 ## Android-Release
 
 Release-APKs müssen für jede Installation dauerhaft mit demselben Schlüssel signiert werden. Gradle erwartet:

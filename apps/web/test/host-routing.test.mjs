@@ -148,6 +148,7 @@ before(async () => {
       ANDROID_APK_URL: "https://downloads.example.com/display.apk",
       SUPABASE_URL: "http://127.0.0.1:32188",
       SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+      LOCAL_AUTH_ENABLED: "false",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -188,6 +189,18 @@ test("Studio-Host liefert keine Player-Oberfläche oder Player-API", async () =>
 
   const playerApi = await request("/api/player/config", `studio.localhost:${port}`);
   assert.equal(playerApi.status, 404);
+});
+
+test("Lokaler Login und Registrierung lassen sich serverseitig deaktivieren", async () => {
+  const config = await request("/api/auth/config", `studio.localhost:${port}`);
+  assert.equal(config.status, 200);
+  assert.deepEqual(JSON.parse(config.body), { oidcEnabled: false, localAuthEnabled: false, providerName: "Authentik" });
+
+  for (const endpoint of ["login", "register"]) {
+    const response = await request(`/api/auth/${endpoint}`, `studio.localhost:${port}`, "POST", JSON.stringify({ email: "user@example.com", password: "password123" }));
+    assert.equal(response.status, 403);
+    assert.match(response.body, /LOCAL_AUTH_DISABLED/);
+  }
 });
 
 test("Pairing validiert den Code vor einem Datenbankzugriff", async () => {

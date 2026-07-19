@@ -41,6 +41,8 @@ Für Produktion werden benötigt:
 
 Die vollständige Anleitung inklusive Umgebungsvariablen, Reverse-Proxy-Beispiel, Start, Updates und Backups steht in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
+Authentik kann als OIDC-Login verwendet werden; bestehende Benutzer werden dabei über ihre verifizierte E-Mail zugeordnet. Konfiguration und das Abschalten des lokalen Passwort-Logins sind unter [Deployment](docs/DEPLOYMENT.md#authentik-über-oidc) beschrieben.
+
 ## Entwicklung und Prüfungen
 
 ```bash
