@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     if (!tokenResponse.ok) throw new Error(`OIDC token exchange failed (${tokenResponse.status})`);
     const tokens = await tokenResponse.json() as { id_token?: string }; if (!tokens.id_token) throw new Error("OIDC response has no ID token");
     const claims = await verifyIdToken(tokens.id_token, nonce); const email = typeof claims.email === "string" ? claims.email.trim().toLowerCase() : "";
-    if (!/^\S+@\S+\.\S+$/.test(email) || claims.email_verified !== true) throw new Error("OIDC provider did not return a verified email address");
+    if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error("OIDC provider did not return a valid email address");
     let user = await findUserByEmail(email);
     if (!user) {
       if (!oidcSignupEnabled()) return finish(request, "account_not_found");

@@ -135,7 +135,7 @@ LOCAL_AUTH_ENABLED=false
 OIDC_ALLOW_SIGNUP=true
 ```
 
-LOCAL_AUTH_ENABLED=false deaktiviert sowohl Passwort-Login als auch Registrierung in UI und API. OIDC-Benutzer werden ausschließlich anhand einer von Authentik als verifiziert gemeldeten, normalisierten E-Mail einem vorhandenen Supabase-Benutzer zugeordnet. Mit OIDC_ALLOW_SIGNUP=false wird kein neuer Supabase-Benutzer angelegt, wenn noch kein Account mit dieser E-Mail existiert.
+LOCAL_AUTH_ENABLED=false deaktiviert sowohl Passwort-Login als auch Registrierung in UI und API. OIDC-Benutzer werden anhand der normalisierten E-Mail aus dem signierten ID-Token einem vorhandenen Supabase-Benutzer zugeordnet; der Claim email_verified muss dafür nicht true sein. Deshalb darf nur ein vertrauenswürdiger OIDC-Provider verwendet werden, der E-Mail-Adressen nicht frei durch Benutzer ändern lässt. Mit OIDC_ALLOW_SIGNUP=false wird kein neuer Supabase-Benutzer angelegt, wenn noch kein Account mit dieser E-Mail existiert.
 
 ## Android-Release
 
