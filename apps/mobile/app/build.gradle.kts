@@ -4,6 +4,12 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val releaseStoreFile = providers.environmentVariable("DISPLAY_SIGNING_STORE_FILE").orNull
+val releaseStorePassword = providers.environmentVariable("DISPLAY_SIGNING_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("DISPLAY_SIGNING_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("DISPLAY_SIGNING_KEY_PASSWORD").orNull
+val hasReleaseSigning = listOf(releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.kmuc.display"
     compileSdk = 35
@@ -22,12 +28,22 @@ android {
         buildConfig = true
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) create("release") {
+            storeFile = file(releaseStoreFile!!)
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
+        }
+    }
+
     buildTypes {
         debug {
             buildConfigField("String", "API_URL", "\"http://10.0.2.2:3000\"")
         }
         release {
             isMinifyEnabled = false
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
             buildConfigField("String", "API_URL", "\"https://display.qhrd.online\"")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

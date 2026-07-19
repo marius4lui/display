@@ -18,7 +18,8 @@
     "supabase:stop": "supabase stop",
     "supabase:reset": "supabase db reset",
     "supabase:status": "supabase status",
-    "mobile:build": "cd apps/mobile && ./gradlew assembleDebug"
+    "mobile:build": "cd apps/mobile && ./gradlew assembleDebug",
+    "mobile:release": "cd apps/mobile && ./gradlew assembleRelease"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
