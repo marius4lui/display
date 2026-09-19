@@ -67,6 +67,12 @@ class MainActivity : ComponentActivity() {
         lightController.start()
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (settings.current().setupComplete) showClock()
+    }
+
     override fun onPause() {
         lightController.stop()
         super.onPause()
