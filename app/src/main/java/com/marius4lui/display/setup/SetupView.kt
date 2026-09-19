@@ -2,19 +2,18 @@ package com.marius4lui.display.setup
 
 import android.content.Context
 import android.content.res.ColorStateList
-import android.graphics.Color
 import android.text.InputType
 import android.view.Gravity
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import com.marius4lui.display.homeassistant.HomeAssistantClient
 import com.marius4lui.display.storage.SecureTokenStore
 import com.marius4lui.display.storage.SettingsStore
 import com.marius4lui.display.ui.Ui
+import com.marius4lui.display.ui.DotLabelView
 import com.marius4lui.display.weather.Place
 import com.marius4lui.display.weather.WeatherRepository
 import kotlinx.coroutines.CoroutineScope
@@ -28,36 +27,60 @@ class SetupView(
     private val onComplete: () -> Unit,
 ) : LinearLayout(context) {
     private val content = Ui.column(context)
+    private val chapter = TextView(context).apply {
+        textSize = 78f
+        typeface = android.graphics.Typeface.create("sans-serif-thin", android.graphics.Typeface.NORMAL)
+        setTextColor(Ui.INK)
+    }
+    private val chapterName = Ui.title(context, "")
+    private val stepDots = Ui.body(context, "").apply { textSize = 18f; setTextColor(Ui.RED) }
     private val navigation = LinearLayout(context).apply {
         gravity = Gravity.END or Gravity.CENTER_VERTICAL
         setPadding(Ui.dp(context, 28), Ui.dp(context, 8), Ui.dp(context, 28), Ui.dp(context, 14))
         setBackgroundColor(Ui.PAPER)
     }
-    private val progress = ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal).apply {
-        max = 6
-        progressTintList = ColorStateList.valueOf(Ui.RED)
-        progressBackgroundTintList = ColorStateList.valueOf(Ui.LINE)
-    }
     private var page = 0
     private var selectedPlace: Place? = null
+    private val scroll = ScrollView(context).apply {
+        isFillViewport = true
+        overScrollMode = OVER_SCROLL_IF_CONTENT_SCROLLS
+        addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+    }
 
     init {
-        orientation = VERTICAL
+        orientation = HORIZONTAL
         setBackgroundColor(Ui.PAPER)
-        addView(progress, LayoutParams(LayoutParams.MATCH_PARENT, Ui.dp(context, 3)))
-        addView(ScrollView(context).apply {
-            isFillViewport = true
-            overScrollMode = OVER_SCROLL_IF_CONTENT_SCROLLS
-            addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-        addView(navigation, LayoutParams(LayoutParams.MATCH_PARENT, Ui.dp(context, 76)))
+        val rail = Ui.column(context)
+        rail.addView(DotLabelView(context, "DISPLAY"), LayoutParams(-1, Ui.dp(context, 38)))
+        rail.addView(Ui.body(context, "MAKE TIME YOURS.").apply { textSize = 9f; typeface = android.graphics.Typeface.MONOSPACE })
+        Ui.addSpace(rail, 28)
+        rail.addView(chapter)
+        rail.addView(chapterName)
+        rail.addView(android.view.View(context), LayoutParams(1, 0, 1f))
+        rail.addView(stepDots)
+        addView(rail, LayoutParams(Ui.dp(context, 224), -1))
+        val right = LinearLayout(context).apply { orientation = VERTICAL }
+        right.addView(scroll, LayoutParams(-1, 0, 1f))
+        right.addView(navigation, LayoutParams(-1, Ui.dp(context, 72)))
+        addView(right, LayoutParams(0, -1, 1f))
         showPage()
     }
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        chapter.visibility = if (h < Ui.dp(context, 300)) GONE else VISIBLE
+    }
+
     private fun showPage() {
+        isFocusableInTouchMode = true
+        requestFocus()
+        (context.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+            .hideSoftInputFromWindow(windowToken, 0)
         content.removeAllViews()
         navigation.removeAllViews()
-        progress.progress = page + 1
+        chapter.text = (page + 1).toString().padStart(2, '0')
+        stepDots.text = (0..5).joinToString(" ") { if (it == page) "●" else "·" }
+        scroll.scrollTo(0, 0)
         when (page) {
             0 -> welcome()
             1 -> clock()
@@ -69,12 +92,7 @@ class SetupView(
     }
 
     private fun heading(number: String, label: String, copy: String? = null) {
-        content.addView(Ui.body(context, "SETUP  $number / 06").apply {
-            setTextColor(Ui.RED)
-            textSize = 12f
-            letterSpacing = 0.12f
-        })
-        Ui.addSpace(content, 4)
+        chapterName.text = if (label == "HOME ASSISTANT") "HOME" else label
         content.addView(Ui.title(context, label))
         copy?.let { Ui.addSpace(content, 8); content.addView(Ui.body(context, it)) }
         Ui.addSpace(content, 12)
@@ -185,7 +203,10 @@ class SetupView(
 
     private fun setNavigation(next: String, action: () -> Unit) {
         if (page > 0) navigation.addView(Ui.button(context, "BACK") { page--; showPage() }, LayoutParams(Ui.dp(context, 132), Ui.dp(context, 52)))
-        navigation.addView(Ui.button(context, next, action), LayoutParams(Ui.dp(context, 190), Ui.dp(context, 52)).apply { marginStart = Ui.dp(context, 10) })
+        navigation.addView(Ui.button(context, "$next  →", action).apply {
+            setTextColor(Ui.SURFACE)
+            background = android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(0x30ffffff), Ui.panelDrawable(context, Ui.INK), null)
+        }, LayoutParams(Ui.dp(context, 190), Ui.dp(context, 52)).apply { marginStart = Ui.dp(context, 10) })
     }
 
     private fun check(label: String, checked: Boolean) = CheckBox(context).apply {
@@ -196,7 +217,9 @@ class SetupView(
         textSize = 14f
         letterSpacing = 0.04f
         minHeight = Ui.dp(context, 50)
-        content.addView(this)
+        background = Ui.panelDrawable(context)
+        setPadding(Ui.dp(context, 12), Ui.dp(context, 4), Ui.dp(context, 12), Ui.dp(context, 4))
+        content.addView(this, LayoutParams(-1, -2).apply { bottomMargin = Ui.dp(context, 8) })
     }
 
     private fun input(hint: String, value: String) = EditText(context).apply {
@@ -205,8 +228,11 @@ class SetupView(
         setHintTextColor(Ui.MUTED)
         setTextColor(Ui.INK)
         setSingleLine(true)
-        backgroundTintList = ColorStateList.valueOf(Ui.INK)
-        content.addView(this, LayoutParams(LayoutParams.MATCH_PARENT, Ui.dp(context, 54)))
+        imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI or android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+        textSize = 14f
+        background = Ui.panelDrawable(context)
+        setPadding(Ui.dp(context, 18), 0, Ui.dp(context, 18), 0)
+        content.addView(this, LayoutParams(LayoutParams.MATCH_PARENT, Ui.dp(context, 54)).apply { bottomMargin = Ui.dp(context, 8) })
     }
 
     private fun infoCard(label: String, value: String) = LinearLayout(context).apply {

@@ -1,7 +1,8 @@
 package com.marius4lui.display.launcher
 
 import android.content.Context
-import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -15,6 +16,7 @@ import android.widget.TextView
 import androidx.core.widget.doAfterTextChanged
 import com.marius4lui.display.storage.SettingsStore
 import com.marius4lui.display.ui.Ui
+import com.marius4lui.display.ui.DotLabelView
 
 class AppDrawerView(
     context: Context,
@@ -25,6 +27,8 @@ class AppDrawerView(
     private val repository = InstalledAppsRepository(context)
     private val grid = GridLayout(context).apply { columnCount = 6 }
     private var apps = emptyList<InstalledApp>()
+    private val searchStatus = Ui.body(context, "").apply { textSize = 11f }
+    private var query = ""
 
     init {
         orientation = VERTICAL
@@ -32,19 +36,25 @@ class AppDrawerView(
         setBackgroundColor(Ui.PAPER)
 
         val header = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
-        header.addView(Ui.button(context, "‹ Clock", onBack), LayoutParams(Ui.dp(context, 130), Ui.dp(context, 52)))
+        header.addView(Ui.iconButton(context, Ui.tr("Uhr", "Clock"), "back", onBack), LayoutParams(Ui.dp(context, 100), Ui.dp(context, 48)))
+        header.addView(DotLabelView(context, "APPS"), LayoutParams(Ui.dp(context, 110), Ui.dp(context, 48)).apply { marginStart = Ui.dp(context, 20) })
         val search = EditText(context).apply {
-            hint = "Search apps"
+            hint = Ui.tr("Apps suchen", "Search apps")
+            textSize = 14f
             setHintTextColor(Ui.MUTED)
             setTextColor(Ui.INK)
             setSingleLine(true)
+            imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI or android.view.inputmethod.EditorInfo.IME_ACTION_DONE
             background = Ui.panelDrawable(context)
             setPadding(Ui.dp(context, 18), 0, Ui.dp(context, 18), 0)
-            doAfterTextChanged { render(it?.toString().orEmpty()) }
+            doAfterTextChanged { query = it?.toString().orEmpty(); render(query) }
         }
-        header.addView(search, LayoutParams(0, Ui.dp(context, 52), 1f).apply { marginStart = Ui.dp(context, 12) })
-        header.addView(Ui.button(context, "Settings", onSettings), LayoutParams(Ui.dp(context, 130), Ui.dp(context, 52)).apply { marginStart = Ui.dp(context, 12) })
+        header.addView(search, LayoutParams(0, Ui.dp(context, 48), 1f).apply { marginStart = Ui.dp(context, 12) })
+        header.addView(Ui.iconButton(context, "", "settings", onSettings).apply { contentDescription = Ui.tr("Einstellungen", "Settings") }, LayoutParams(Ui.dp(context, 56), Ui.dp(context, 48)).apply { marginStart = Ui.dp(context, 12) })
         addView(header)
+        Ui.addSpace(this, 12)
+        addView(searchStatus)
+        Ui.addSpace(this, 6)
 
         addView(ScrollView(context).apply { addView(grid) }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
         reload()
@@ -53,15 +63,18 @@ class AppDrawerView(
     fun reload() {
         val current = settings.current()
         apps = repository.load(current.hiddenPackages, current.favoritePackages)
-        render("")
+        render(query)
     }
 
     private fun render(query: String) {
         grid.removeAllViews()
-        apps.filter { query.isBlank() || it.label.contains(query, ignoreCase = true) }.forEach { app ->
+        val matches = apps.filter { query.isBlank() || it.label.contains(query, ignoreCase = true) }
+        searchStatus.text = if (matches.isEmpty()) Ui.tr("Keine Apps gefunden", "No apps found") else
+            "${matches.size} APPS  /  " + Ui.tr("Lange drücken für Optionen", "Long press for options")
+        matches.forEach { app ->
             grid.addView(appTile(app), GridLayout.LayoutParams().apply {
                 width = 0
-                height = Ui.dp(context, 126)
+                height = Ui.dp(context, 124)
                 columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
                 setMargins(Ui.dp(context, 4), Ui.dp(context, 5), Ui.dp(context, 4), Ui.dp(context, 5))
             })
@@ -72,16 +85,20 @@ class AppDrawerView(
         orientation = VERTICAL
         gravity = Gravity.CENTER
         setPadding(Ui.dp(context, 4), Ui.dp(context, 8), Ui.dp(context, 4), Ui.dp(context, 4))
-        background = Ui.panelDrawable(context)
+        background = Ui.panelDrawable(context, Ui.PAPER)
         addView(ImageView(context).apply {
             setImageDrawable(app.icon)
+            colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+            background = Ui.panelDrawable(context, Ui.SURFACE, Ui.SURFACE, 50)
+            setPadding(Ui.dp(context, 13), Ui.dp(context, 13), Ui.dp(context, 13), Ui.dp(context, 13))
             contentDescription = app.label
-        }, LayoutParams(Ui.dp(context, 58), Ui.dp(context, 58)))
+        }, LayoutParams(Ui.dp(context, 72), Ui.dp(context, 72)))
         addView(TextView(context).apply {
-            text = app.label
+            text = (if (app.packageName in settings.current().favoritePackages) "• " else "") + app.label
             setTextColor(Ui.INK)
             textSize = 12f
             maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
             gravity = Gravity.CENTER
         }, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(context, 32)))
         setOnClickListener { repository.launch(app) }

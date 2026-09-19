@@ -9,6 +9,9 @@ val signingPropertiesFile = rootProject.file("keystore.properties")
 val signingProperties = Properties().apply {
     if (signingPropertiesFile.exists()) signingPropertiesFile.inputStream().use { load(it) }
 }
+val localSigningPath = providers.environmentVariable("DISPLAY_KEYSTORE_PATH").orNull
+val localSigningPassword = providers.environmentVariable("DISPLAY_SIGNING_PASSWORD").orNull
+val hasSigning = signingPropertiesFile.exists() || (localSigningPath != null && localSigningPassword != null)
 
 android {
     namespace = "com.marius4lui.display"
@@ -18,19 +21,19 @@ android {
         applicationId = "com.marius4lui.display"
         minSdk = 30
         targetSdk = 36
-        versionCode = 101
-        versionName = "0.1.1"
+        versionCode = 102
+        versionName = "0.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
-        if (signingPropertiesFile.exists()) {
+        if (hasSigning) {
             create("release") {
-                storeFile = file(signingProperties.getProperty("storeFile"))
-                storePassword = signingProperties.getProperty("storePassword")
-                keyAlias = signingProperties.getProperty("keyAlias")
-                keyPassword = signingProperties.getProperty("keyPassword")
+                storeFile = file(localSigningPath ?: signingProperties.getProperty("storeFile"))
+                storePassword = localSigningPassword ?: signingProperties.getProperty("storePassword")
+                keyAlias = signingProperties.getProperty("keyAlias", "display")
+                keyPassword = localSigningPassword ?: signingProperties.getProperty("keyPassword")
             }
         }
     }
@@ -46,7 +49,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            if (signingPropertiesFile.exists()) signingConfig = signingConfigs.getByName("release")
+            if (hasSigning) signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

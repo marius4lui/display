@@ -2,16 +2,19 @@ package com.marius4lui.display.settings
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
+import android.content.res.ColorStateList
+import android.graphics.Typeface
 import android.provider.Settings
 import android.view.Gravity
-import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
+import android.widget.Switch
 import android.widget.TextView
 import com.marius4lui.display.BuildConfig
+import com.marius4lui.display.storage.DisplaySettings
 import com.marius4lui.display.storage.SettingsStore
+import com.marius4lui.display.ui.DotLabelView
 import com.marius4lui.display.ui.Ui
 
 class SettingsView(
@@ -23,93 +26,153 @@ class SettingsView(
     private val onCheckUpdate: (TextView) -> Unit,
 ) : LinearLayout(context) {
     private val content = Ui.column(context)
+    private val tabs = LinearLayout(context).apply { orientation = VERTICAL }
+    private val scroll = ScrollView(context).apply { isFillViewport = true; addView(content) }
+    private var selected = 0
+    private val names = listOf(Ui.tr("Uhr", "Clock"), Ui.tr("Display", "Display"), "Launcher", Ui.tr("System", "System"))
 
     init {
-        orientation = VERTICAL
+        orientation = HORIZONTAL
         setBackgroundColor(Ui.PAPER)
-        val header = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
-        header.addView(Ui.button(context, "‹ Clock", onBack), LayoutParams(Ui.dp(context, 130), Ui.dp(context, 52)))
-        header.addView(Ui.title(context, "SETTINGS"), LayoutParams(0, Ui.dp(context, 52), 1f).apply { marginStart = Ui.dp(context, 20) })
-        addView(header)
-        addView(ScrollView(context).apply { addView(content) }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
-        build()
+        val rail = LinearLayout(context).apply {
+            orientation = VERTICAL
+            setPadding(Ui.dp(context, 22), Ui.dp(context, 14), Ui.dp(context, 14), Ui.dp(context, 14))
+        }
+        rail.addView(DotLabelView(context, "SETTINGS"), LayoutParams(-1, Ui.dp(context, 40)))
+        rail.addView(Ui.body(context, "DISPLAY / 01").apply {
+            typeface = Typeface.MONOSPACE; textSize = 10f; setTextColor(Ui.RED)
+        })
+        Ui.addSpace(rail, 20)
+        rail.addView(tabs, LayoutParams(-1, 0, 1f))
+        rail.addView(Ui.iconButton(context, Ui.tr("Zur Uhr", "Clock"), "back", onBack), LayoutParams(-1, Ui.dp(context, 48)))
+        addView(rail, LayoutParams(Ui.dp(context, 210), -1))
+        addView(scroll, LayoutParams(0, -1, 1f))
+        select(0)
     }
 
-    private fun build() {
+    private fun select(index: Int) {
+        selected = index
+        tabs.removeAllViews()
+        names.forEachIndexed { i, name ->
+            val label = (if (i == selected) "●  " else "   ") + name
+            tabs.addView(Ui.button(context, label) { select(i) }.apply {
+                gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                setTextColor(if (i == selected) Ui.RED else Ui.MUTED)
+                if (i != selected) background = Ui.panelDrawable(context, Ui.PAPER)
+            }, LayoutParams(-1, Ui.dp(context, 48)).apply { bottomMargin = Ui.dp(context, 4) })
+        }
+        content.removeAllViews()
+        scroll.scrollTo(0, 0)
+        content.addView(Ui.title(context, names[index]))
+        content.addView(Ui.body(context, Ui.tr("Dein Display. Dein Rhythmus.", "Your display. Your rhythm.")))
+        Ui.addSpace(content, 18)
         val current = store.current()
-        section("Clock & appearance")
-        val hour24 = check("24-hour time", current.use24Hour)
-        val seconds = check("Show seconds", current.showSeconds)
-        val date = check("Show date", current.showDate)
-        content.addView(Ui.body(context, "White mode is the fixed Display design."))
-
-        section("Display")
-        val automatic = check("Automatic ambient brightness", current.autoBrightness)
-        val awake = check("Keep display on", current.keepScreenOn)
-        val immersive = check("Hide system bars", current.immersive)
-        content.addView(Ui.body(context, "Minimum brightness"))
-        val minimum = seek(current.minBrightness)
-        content.addView(Ui.body(context, "Maximum brightness"))
-        val maximum = seek(current.maxBrightness)
-
-        section("Launcher")
-        content.addView(Ui.button(context, "Choose Display as Home app", onChooseHome))
-        content.addView(Ui.button(context, "Open Android Home settings") {
-            context.startActivity(Intent(Settings.ACTION_HOME_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        })
-        content.addView(Ui.button(context, "Show all hidden apps") {
-            store.update { it.copy(hiddenPackages = emptySet()) }
-        })
-
-        section("Updates & diagnostics")
-        val updateStatus = Ui.body(context, "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-        content.addView(updateStatus)
-        content.addView(Ui.button(context, "Check GitHub for updates") { onCheckUpdate(updateStatus) })
-        content.addView(Ui.body(context, "Package: ${context.packageName}\nDevice: ${android.os.Build.MODEL}\nAndroid ${android.os.Build.VERSION.RELEASE} / API ${android.os.Build.VERSION.SDK_INT}"))
-
-        section("Apply")
-        content.addView(Ui.button(context, "Save settings") {
-            store.update {
-                it.copy(
-                    use24Hour = hour24.isChecked,
-                    showSeconds = seconds.isChecked,
-                    showDate = date.isChecked,
-                    autoBrightness = automatic.isChecked,
-                    keepScreenOn = awake.isChecked,
-                    immersive = immersive.isChecked,
-                    minBrightness = minimum.progress.coerceAtMost(maximum.progress),
-                    maxBrightness = maximum.progress.coerceAtLeast(minimum.progress),
-                )
+        when (index) {
+            0 -> {
+                toggle(Ui.tr("24-Stunden-Format", "24-hour format"), Ui.tr("Zeit auf einen Blick.", "Time at a glance."), current.use24Hour) { s, v -> s.copy(use24Hour = v) }
+                toggle(Ui.tr("Sekunden", "Seconds"), Ui.tr("Kleiner Sekundenzähler und roter Zeiger.", "Small seconds counter and red hand."), current.showSeconds) { s, v -> s.copy(showSeconds = v) }
+                toggle(Ui.tr("Datum", "Date"), Ui.tr("Kalenderkarte neben der Uhr.", "Calendar card next to the clock."), current.showDate) { s, v -> s.copy(showDate = v) }
             }
-            onApply()
-        })
-        content.addView(Ui.button(context, "Run setup again") {
-            store.update { it.copy(setupComplete = false) }
-            onApply()
+            1 -> {
+                toggle(Ui.tr("Automatische Helligkeit", "Adaptive brightness"), Ui.tr("Passt sich dem Umgebungslicht an.", "Follows the ambient light."), current.autoBrightness) { s, v -> s.copy(autoBrightness = v) }
+                toggle(Ui.tr("Display anlassen", "Keep awake"), Ui.tr("Solange Display geöffnet ist.", "While Display is open."), current.keepScreenOn) { s, v -> s.copy(keepScreenOn = v) }
+                toggle(Ui.tr("Vollbild", "Full screen"), Ui.tr("Systemleisten mit einer Randgeste einblenden.", "Swipe from an edge to reveal system bars."), current.immersive) { s, v -> s.copy(immersive = v) }
+                slider(Ui.tr("Minimum", "Minimum"), current.minBrightness) { value ->
+                    store.update { it.copy(minBrightness = value.coerceAtMost(it.maxBrightness)) }
+                    store.current().minBrightness
+                }
+                slider(Ui.tr("Maximum", "Maximum"), current.maxBrightness) { value ->
+                    store.update { it.copy(maxBrightness = value.coerceAtLeast(it.minBrightness)) }
+                    store.current().maxBrightness
+                }
+            }
+            2 -> {
+                action(Ui.tr("Als Startseite festlegen", "Set as home"), Ui.tr("Display mit der Home-Taste öffnen.", "Open Display with the Home button."), onChooseHome)
+                action(Ui.tr("Android-Startseite", "Android Home settings"), Ui.tr("Einen anderen Launcher auswählen.", "Choose another launcher.")) {
+                    context.startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
+                }
+                action(Ui.tr("Ausgeblendete Apps zurückholen", "Restore hidden apps"), Ui.tr("Alle Apps wieder im Menü anzeigen.", "Show all apps in the drawer again.")) {
+                    store.update { it.copy(hiddenPackages = emptySet()) }
+                    select(2)
+                }
+            }
+            3 -> {
+                val updateStatus = Ui.body(context, "Display " + BuildConfig.VERSION_NAME)
+                val card = card()
+                card.addView(Ui.title(context, "Display Updates").apply { textSize = 20f })
+                card.addView(updateStatus)
+                Ui.addSpace(card, 12)
+                card.addView(Ui.button(context, Ui.tr("Nach Updates suchen", "Check for updates")) { onCheckUpdate(updateStatus) }.apply {
+                    background = Ui.panelDrawable(context, Ui.PAPER)
+                })
+                toggle(Ui.tr("Updates automatisch prüfen", "Automatic update checks"), "GitHub Releases", current.autoUpdateCheck) { s, v -> s.copy(autoUpdateCheck = v) }
+                action(Ui.tr("Einrichtung öffnen", "Open setup"), Ui.tr("Wetter und Home Assistant einrichten.", "Set up weather and Home Assistant.")) {
+                    store.update { it.copy(setupComplete = false) }
+                    onApply()
+                }
+                Ui.addSpace(content, 8)
+                content.addView(Ui.body(context, "${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE}").apply { textSize = 11f })
+            }
+        }
+    }
+
+    private fun card(): LinearLayout = LinearLayout(context).apply {
+        orientation = VERTICAL
+        background = Ui.panelDrawable(context)
+        setPadding(Ui.dp(context, 18), Ui.dp(context, 14), Ui.dp(context, 18), Ui.dp(context, 14))
+        content.addView(this, LayoutParams(-1, -2).apply { bottomMargin = Ui.dp(context, 8) })
+    }
+
+    private fun toggle(title: String, subtitle: String, value: Boolean, change: (DisplaySettings, Boolean) -> DisplaySettings) {
+        val row = card().apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; minimumHeight = Ui.dp(context, 72) }
+        val text = LinearLayout(context).apply {
+            orientation = VERTICAL
+            addView(Ui.title(context, title).apply { textSize = 16f })
+            addView(Ui.body(context, subtitle).apply { textSize = 11f })
+        }
+        row.addView(text, LayoutParams(0, -2, 1f))
+        val control = Switch(context).apply {
+            contentDescription = title
+            isChecked = value
+            minWidth = Ui.dp(context, 50)
+            minHeight = Ui.dp(context, 48)
+            thumbTintList = ColorStateList.valueOf(Ui.SURFACE)
+            trackTintList = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(Ui.RED, Ui.MUTED))
+            setOnCheckedChangeListener { _, enabled -> store.update { change(it, enabled) } }
+        }
+        row.addView(control)
+        row.setOnClickListener { control.isChecked = !control.isChecked }
+    }
+
+    private fun slider(title: String, value: Int, change: (Int) -> Int) {
+        val panel = card()
+        val label = Ui.body(context, "$title · ${value * 100 / 255}%")
+        panel.addView(label)
+        panel.addView(SeekBar(context).apply {
+            max = 255; progress = value; minHeight = Ui.dp(context, 48)
+            progressTintList = ColorStateList.valueOf(Ui.RED)
+            thumbTintList = ColorStateList.valueOf(Ui.RED)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seek: SeekBar, progress: Int, fromUser: Boolean) {
+                    label.text = "$title · ${progress * 100 / 255}%"
+                    if (fromUser) {
+                        val saved = change(progress)
+                        if (saved != progress) seek.progress = saved
+                    }
+                }
+                override fun onStartTrackingTouch(seek: SeekBar) = Unit
+                override fun onStopTrackingTouch(seek: SeekBar) = Unit
+            })
         })
     }
 
-    private fun section(label: String) {
-        Ui.addSpace(content, 14)
-        content.addView(TextView(context).apply {
-            text = label.uppercase()
-            textSize = 13f
-            setTextColor(Ui.RED)
-        })
-    }
-
-    private fun check(label: String, value: Boolean) = CheckBox(context).apply {
-        text = label
-        isChecked = value
-        setTextColor(Ui.INK)
-        minHeight = Ui.dp(context, 50)
-        content.addView(this)
-    }
-
-    private fun seek(value: Int) = SeekBar(context).apply {
-        max = 255
-        progress = value
-        minHeight = Ui.dp(context, 42)
-        content.addView(this)
+    private fun action(title: String, subtitle: String, action: () -> Unit) {
+        card().apply {
+            minimumHeight = Ui.dp(context, 74)
+            addView(Ui.title(context, "$title  →").apply { textSize = 16f })
+            addView(Ui.body(context, subtitle).apply { textSize = 12f })
+            isFocusable = true
+            setOnClickListener { action() }
+        }
     }
 }

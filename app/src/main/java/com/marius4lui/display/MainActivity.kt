@@ -9,7 +9,8 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.FrameLayout
+import android.view.WindowInsets
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -45,11 +46,19 @@ class MainActivity : ComponentActivity() {
     private var weatherText = ""
     private var homeText = ""
     private var refreshJob: Job? = null
+    private var screen = "clock"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         settings = (application as DisplayApplication).settings
         secrets = SecureTokenStore(this)
+        // Android 11 does not resize fullscreen windows for the keyboard. Reserve
+        // IME space explicitly so the setup ScrollView and fixed actions remain usable.
+        findViewById<View>(android.R.id.content).setOnApplyWindowInsetsListener { content, insets ->
+            val bottom = if (settings.current().immersive) insets.getInsets(WindowInsets.Type.ime()).bottom else 0
+            if (content.paddingBottom != bottom) content.setPadding(0, 0, 0, bottom)
+            insets
+        }
         window.statusBarColor = Ui.PAPER
         window.navigationBarColor = Ui.PAPER
         lightController = AmbientLightController(this, settings::current)
@@ -90,6 +99,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showSetup() {
+        screen = "setup"
         refreshJob?.cancel()
         setContentView(SetupView(this, scope, settings, secrets) {
             requestHomeRole()
@@ -98,14 +108,36 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showClock() {
+        screen = "clock"
         clock = DotClockView(this)
         bindClock()
-        val root = FrameLayout(this).apply { addView(clock, FrameLayout.LayoutParams(-1, -1)) }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Ui.PAPER)
+            addView(clock, LinearLayout.LayoutParams(-1, 0, 1f))
+        }
+        val dock = LinearLayout(this).apply {
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(Ui.dp(this@MainActivity, 20), 0, Ui.dp(this@MainActivity, 20), Ui.dp(this@MainActivity, 12))
+        }
+        val actions = listOf(
+            Triple(Ui.tr("Apps", "Apps"), "apps", ::showApps),
+            Triple("Home", "home", ::showHomeAssistant),
+            Triple(Ui.tr("Einstellungen", "Settings"), "settings", ::showSettings)
+        )
+        actions.forEachIndexed { i, (label, glyph, action) ->
+            dock.addView(Ui.iconButton(this, label, glyph, action), LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f).apply {
+                if (i > 0) marginStart = Ui.dp(this@MainActivity, 10)
+            })
+        }
+        root.addView(dock, LinearLayout.LayoutParams(-1, Ui.dp(this, 64)))
         val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean = true
             override fun onLongPress(e: MotionEvent) = showSettings()
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-                if (e1 == null) return false
+                if (e1 == null) {
+                    return false
+                }
                 val dx = e2.x - e1.x
                 val dy = e2.y - e1.y
                 if (kotlin.math.abs(dy) > kotlin.math.abs(dx) && kotlin.math.abs(dy) > 80) {
@@ -119,7 +151,7 @@ class MainActivity : ComponentActivity() {
                 return false
             }
         })
-        root.setOnTouchListener { _, event -> detector.onTouchEvent(event) }
+        clock.setOnTouchListener { _, event -> detector.onTouchEvent(event) }
         setContentView(root)
         applyWindowSettings()
         startDataRefresh()
@@ -127,11 +159,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showApps() {
+        screen = "apps"
         refreshJob?.cancel()
         setContentView(AppDrawerView(this, settings, ::showClock, ::showSettings))
     }
 
     private fun showSettings() {
+        screen = "settings"
         refreshJob?.cancel()
         setContentView(
             SettingsView(
@@ -146,12 +180,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showHomeAssistant() {
+        screen = "home"
         refreshJob?.cancel()
-        setContentView(HomeAssistantView(this, scope, homeAssistant, settings.current(), secrets.getHomeAssistantToken(), ::showClock))
+        setContentView(HomeAssistantView(this, scope, homeAssistant, settings.current(), secrets.getHomeAssistantToken(), ::showClock, ::showSetup))
     }
 
     private fun setClockIfNeeded(): Boolean {
-        if (::clock.isInitialized && clock.parent != null) return false
+        if (screen == "clock") return false
         showClock()
         return true
     }
@@ -188,6 +223,7 @@ class MainActivity : ComponentActivity() {
 
     private fun applyWindowSettings() {
         val current = settings.current()
+        window.setSoftInputMode(if (current.immersive) WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING else WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         if (current.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val lightBars = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR

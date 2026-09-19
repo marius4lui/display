@@ -32,6 +32,7 @@
             android:excludeFromRecents="true"
             android:exported="true"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
             android:screenOrientation="landscape">
             <intent-filter android:priority="10">
                 <action android:name="android.intent.action.MAIN" />
