@@ -2,9 +2,10 @@
 
 1. Update `versionName`, monotonic `versionCode`, and `CHANGELOG.md`.
 2. Run unit tests, lint, and an Echo Show 5 smoke test.
-3. Create a signed tag such as `v0.1.0`.
+3. Create an annotated release tag such as `v0.1.3`.
 4. Push the tag. GitHub Actions builds and signs the release APK.
 5. Verify the published APK and SHA-256 file before installing it on the reference device.
+6. Confirm the APK certificate matches the installed release, install with `adb install -r`, and repeat the production-package navigation smoke test.
 
 Required GitHub Actions secrets:
 

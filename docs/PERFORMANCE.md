@@ -10,3 +10,5 @@ Acceptance targets for Echo Show 5 `checkers` (not claims of completed measureme
 - no ANR, crash, or continuously growing memory during a 24-hour soak.
 
 The UI uses Android Views and Canvas rather than Compose, Flutter, or WebView. The launcher requests icons on demand through Android's package APIs and does not persist icon bitmaps.
+
+The signed v0.1.3 APK is 573,480 bytes, comfortably below the 10 MB artifact target. Startup time, steady PSS, averaged idle CPU, and the 24-hour soak remain performance targets rather than completed measurements.

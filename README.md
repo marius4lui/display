@@ -1,12 +1,16 @@
 # Display
 
-Display is a tiny, Nothing-inspired clock and Android launcher built specifically for the Echo Show 5 (`checkers`) running LineageOS 18.1.
+Display is a small, glanceable clock and Android launcher built specifically for the Echo Show 5 (`checkers`) running LineageOS 18.1. The current release is [v0.1.3](https://github.com/marius4lui/display/releases/tag/v0.1.3).
 
 It replaces a conventional home screen with a readable dot-matrix clock, an ambient-light-aware display, weather, Home Assistant controls, and a fast app drawer. Display does not contain Nothing branding or proprietary Nothing assets.
 
 ![Display on Echo Show 5](docs/screenshots/clock.png)
 
-See the [design system](docs/DESIGN.md) and [0.1.3 verification notes](docs/QA-0.1.3.md).
+| Four-column app drawer | Compact, touch-sized settings |
+| --- | --- |
+| ![App drawer on Echo Show 5](docs/screenshots/apps.png) | ![Settings on Echo Show 5](docs/screenshots/settings.png) |
+
+See the [design system](docs/DESIGN.md), [installation guide](docs/INSTALL.md), and [0.1.3 verification notes](docs/QA-0.1.3.md).
 
 ## Target
 
@@ -32,16 +36,50 @@ Other Android 11+ devices may work, but are not currently supported.
 - Two-column setup with scrollable content and fixed navigation for the 960 × 480 touchscreen
 - Categorized settings with immediately saved controls
 
+## Navigation
+
+The clock is the center of a three-page spatial layout:
+
+| From | Gesture | Result |
+| --- | --- | --- |
+| Clock | Swipe right | Apps |
+| Apps | Swipe left | Clock |
+| Clock | Swipe left | Home Assistant |
+| Home Assistant | Swipe right | Clock |
+
+An outward swipe at either edge stays on the current page, and vertical scrolling in the app drawer never changes pages. Use the gear for Settings; Android Back and the **Clock** button return to the clock.
+
+The clock, Apps, and Home Assistant are immersive smart-display surfaces. Android system bars remain available through an edge swipe. Setup and Settings remain safely inset when fullscreen mode is disabled.
+
+## Install
+
+Download the signed APK and checksum from the [latest GitHub release](https://github.com/marius4lui/display/releases/latest), verify the SHA-256 file, and install it as an in-place update:
+
+```powershell
+adb install -r .\display-0.1.3-armv7.apk
+adb shell am start -n com.marius4lui.display/.MainActivity
+```
+
+`-r` preserves the existing configuration when the installed app uses the same release certificate. See the [full installation guide](docs/INSTALL.md) before selecting Display as the Home app.
+
 ## Build
 
 Requirements: JDK 17 or newer and Android SDK 36.
 
 ```powershell
-.\gradlew.bat testDebugUnitTest assembleDebug
+.\gradlew.bat lintDebug testDebugUnitTest assembleDebug
 adb install -r .\app\build\outputs\apk\debug\app-debug.apk
+adb shell am start -n com.marius4lui.display.debug/com.marius4lui.display.MainActivity
 ```
 
-See [docs/INSTALL.md](docs/INSTALL.md), [docs/HOME_ASSISTANT.md](docs/HOME_ASSISTANT.md), and [docs/ADB_RECOVERY.md](docs/ADB_RECOVERY.md).
+Debug builds use the separate package `com.marius4lui.display.debug`, so they can be tested beside the signed launcher without replacing its data or Home-role selection.
+
+Additional documentation:
+
+- [Home Assistant setup and network policy](docs/HOME_ASSISTANT.md)
+- [Launcher recovery through ADB](docs/ADB_RECOVERY.md)
+- [Release process](docs/RELEASE.md)
+- [Performance targets](docs/PERFORMANCE.md)
 
 ## Privacy
 
