@@ -17,19 +17,25 @@ Expected values include `checkers`, LineageOS `18.1`, and `960x480`.
 Download the APK and matching `.sha256` file from the [latest GitHub release](https://github.com/marius4lui/display/releases/latest). Verify that the calculated SHA-256 matches the first value in the checksum file:
 
 ```powershell
-$expected = (Get-Content .\display-0.1.3-armv7.apk.sha256).Split(' ')[0]
-$actual = (Get-FileHash .\display-0.1.3-armv7.apk -Algorithm SHA256).Hash
+$expected = (Get-Content .\display-0.1.4-armv7.apk.sha256).Split(' ')[0]
+$actual = (Get-FileHash .\display-0.1.4-armv7.apk -Algorithm SHA256).Hash
 $actual.ToLowerInvariant() -eq $expected.ToLowerInvariant()
 ```
 
 Install and open the verified APK:
 
 ```powershell
-adb install -r .\display-0.1.3-armv7.apk
+adb install -r .\display-0.1.4-armv7.apk
 adb shell am start -n com.marius4lui.display/.MainActivity
 ```
 
 Complete the on-device setup. At the last step, Android asks for the Home app. Select **Display** and **Always**.
+
+## Power-button AOD
+
+Open **Settings → Display** and enable **Power button AOD**. Android shows a permanent low-priority notification because reliable screen-state handling requires a foreground service. No “display over other apps” or accessibility permission is needed. The first power press wakes into Display's dim clock; a second press returns the device to its LineageOS sleep/doze behavior.
+
+Do not grant unrelated accessibility, overlay, or device-admin access: those permissions do not make an ordinary Android app the hardware power-key handler.
 
 ## Update
 

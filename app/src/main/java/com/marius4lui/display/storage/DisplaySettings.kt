@@ -6,6 +6,7 @@ data class DisplaySettings(
     val showSeconds: Boolean = false,
     val showDate: Boolean = true,
     val keepScreenOn: Boolean = true,
+    val alwaysOnDisplay: Boolean = false,
     val immersive: Boolean = false,
     val autoBrightness: Boolean = true,
     val minBrightness: Int = 18,

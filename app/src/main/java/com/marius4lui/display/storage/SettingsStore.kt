@@ -25,6 +25,7 @@ class SettingsStore(context: Context) {
         showSeconds = prefs.getBoolean("show_seconds", false),
         showDate = prefs.getBoolean("show_date", true),
         keepScreenOn = prefs.getBoolean("keep_screen_on", true),
+        alwaysOnDisplay = prefs.getBoolean("always_on_display", false),
         immersive = prefs.getBoolean("immersive", false),
         autoBrightness = prefs.getBoolean("auto_brightness", true),
         minBrightness = prefs.getInt("min_brightness", 18),
@@ -51,6 +52,7 @@ class SettingsStore(context: Context) {
             .putBoolean("show_seconds", value.showSeconds)
             .putBoolean("show_date", value.showDate)
             .putBoolean("keep_screen_on", value.keepScreenOn)
+            .putBoolean("always_on_display", value.alwaysOnDisplay)
             .putBoolean("immersive", value.immersive)
             .putBoolean("auto_brightness", value.autoBrightness)
             .putInt("min_brightness", value.minBrightness)

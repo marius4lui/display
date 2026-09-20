@@ -23,15 +23,16 @@ The time uses a fixed-width 7 × 11 dot grid. Header lettering uses a separate 5
 
 ## Layout and interaction
 
-- Clock: use the complete 960 × 421 safe drawing area, or the full 960 × 480 panel when the ambient launcher surface hides system bars. No permanent navigation dock.
+- Clock: use the full 960 × 480 panel while the ambient launcher surface hides system bars. There is no permanent navigation dock or redundant product/location header.
 - Date enabled: calendar with weekday, day, month, year and seven day markers. Date disabled: an analog module replaces it.
 - Lower-right module: weather when enabled, otherwise a Home Assistant summary when enabled, otherwise an analog dial. Network values are not fabricated.
 - Setup: chapter rail plus independently scrollable content; Back and Next remain outside the scroll area. Android resizes for the keyboard.
 - Settings: four categories, scrollable cards and immediate persistence. Brightness sliders respect the saved minimum/maximum bounds.
-- Navigation: Apps sits left of the clock and Home Assistant sits right. A reverse swipe returns to the clock, outer edges do not wrap, vertical scrolling does not change pages, and Android Back returns to the clock. Settings remains a deliberate gear/back flow. The system Home action returns to the clock.
+- Navigation: Apps sits left of the clock and Home Assistant sits right. Either horizontal direction returns from a secondary page to the clock, vertical scrolling does not change pages, and Android Back returns to the clock. Page changes use a restrained 190 ms translation/fade. Settings remains a deliberate in-card control/back flow. The system Home action returns to the clock.
+- AOD: black background, low-gray time and date, minute-only updates, minimum window brightness, and a small minute-dependent position shift. The AOD intentionally has no continuous animation.
 
 ## Rendering constraints
 
-There is no animation loop, WebView, bitmap wallpaper, blur or shadow. The clock redraw is aligned to the next minute unless seconds are explicitly enabled. Ticks are removed when detached or hidden. The clock face is redrawn as one Canvas view; it is not a dirty-rectangle renderer. Ambient brightness does not switch the palette to dark mode.
+There is no continuous animation loop, WebView, bitmap wallpaper, blur or shadow. The brief page transition is event-driven. The clock redraw is aligned to the next minute unless seconds are explicitly enabled. Ticks are removed when detached or hidden. The clock face is redrawn as one Canvas view; it is not a dirty-rectangle renderer. Ambient brightness does not switch the main palette to dark mode.
 
 Automated width tests cover all 1,440 times of day. Real-device screenshots and scroll checks are required in addition to the build; unit tests alone do not establish visual correctness.

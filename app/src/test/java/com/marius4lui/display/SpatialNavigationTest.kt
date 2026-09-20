@@ -17,8 +17,8 @@ class SpatialNavigationTest {
     }
 
     @Test
-    fun outerEdgesDoNotWrap() {
-        assertEquals("apps", SpatialNavigation.destination("apps", 200f))
-        assertEquals("home", SpatialNavigation.destination("home", -200f))
+    fun eitherDirectionReturnsFromSecondaryPages() {
+        assertEquals("clock", SpatialNavigation.destination("apps", 200f))
+        assertEquals("clock", SpatialNavigation.destination("home", -200f))
     }
 }

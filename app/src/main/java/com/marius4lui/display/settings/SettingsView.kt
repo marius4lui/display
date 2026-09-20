@@ -13,6 +13,7 @@ import android.widget.TextView
 import com.marius4lui.display.BuildConfig
 import com.marius4lui.display.storage.DisplaySettings
 import com.marius4lui.display.storage.SettingsStore
+import com.marius4lui.display.system.AmbientDisplayService
 import com.marius4lui.display.ui.DotLabelView
 import com.marius4lui.display.ui.Ui
 
@@ -75,6 +76,9 @@ class SettingsView(
             1 -> {
                 toggle(Ui.tr("Automatische Helligkeit", "Adaptive brightness"), Ui.tr("Passt sich dem Umgebungslicht an.", "Follows the ambient light."), current.autoBrightness) { s, v -> s.copy(autoBrightness = v) }
                 toggle(Ui.tr("Display anlassen", "Keep awake"), Ui.tr("Solange Display geöffnet ist.", "While Display is open."), current.keepScreenOn) { s, v -> s.copy(keepScreenOn = v) }
+                toggle(Ui.tr("Power-Taste als AOD", "Power button AOD"), Ui.tr("Erster Druck zeigt die gedimmte Uhr, der zweite schaltet aus.", "First press shows the dim clock; the second turns off."), current.alwaysOnDisplay, after = { enabled ->
+                    AmbientDisplayService.sync(context, enabled)
+                }) { s, v -> s.copy(alwaysOnDisplay = v) }
                 toggle(Ui.tr("Vollbild", "Full screen"), Ui.tr("Systemleisten mit einer Randgeste einblenden.", "Swipe from an edge to reveal system bars."), current.immersive) { s, v -> s.copy(immersive = v) }
                 slider(Ui.tr("Minimum", "Minimum"), current.minBrightness) { value ->
                     store.update { it.copy(minBrightness = value.coerceAtMost(it.maxBrightness)) }
@@ -122,7 +126,7 @@ class SettingsView(
         content.addView(this, LayoutParams(-1, -2).apply { bottomMargin = Ui.dp(context, 8) })
     }
 
-    private fun toggle(title: String, subtitle: String, value: Boolean, change: (DisplaySettings, Boolean) -> DisplaySettings) {
+    private fun toggle(title: String, subtitle: String, value: Boolean, after: (Boolean) -> Unit = {}, change: (DisplaySettings, Boolean) -> DisplaySettings) {
         val row = card().apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; minimumHeight = Ui.dp(context, 72) }
         val text = LinearLayout(context).apply {
             orientation = VERTICAL
@@ -137,7 +141,10 @@ class SettingsView(
             minHeight = Ui.dp(context, 48)
             thumbTintList = ColorStateList.valueOf(Ui.SURFACE)
             trackTintList = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(Ui.RED, Ui.MUTED))
-            setOnCheckedChangeListener { _, enabled -> store.update { change(it, enabled) } }
+            setOnCheckedChangeListener { _, enabled ->
+                store.update { change(it, enabled) }
+                after(enabled)
+            }
         }
         row.addView(control)
         row.setOnClickListener { control.isChecked = !control.isChecked }

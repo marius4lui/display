@@ -19,6 +19,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.marius4lui.display.clock.DotClockView
+import com.marius4lui.display.clock.AmbientClockView
 import com.marius4lui.display.display.AmbientLightController
 import com.marius4lui.display.homeassistant.HomeAssistantClient
 import com.marius4lui.display.homeassistant.HomeAssistantView
@@ -27,6 +28,7 @@ import com.marius4lui.display.settings.SettingsView
 import com.marius4lui.display.setup.SetupView
 import com.marius4lui.display.storage.SecureTokenStore
 import com.marius4lui.display.storage.SettingsStore
+import com.marius4lui.display.system.AmbientDisplayService
 import com.marius4lui.display.ui.Ui
 import com.marius4lui.display.update.UpdateRepository
 import com.marius4lui.display.weather.WeatherRepository
@@ -53,6 +55,7 @@ class MainActivity : ComponentActivity() {
     private var gestureStartX = 0f
     private var gestureStartY = 0f
     private var gestureTracking = false
+    private var ambientMode = false
     private val swipeDistance by lazy { ViewConfiguration.get(this).scaledTouchSlop * 8f }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,19 +77,20 @@ class MainActivity : ComponentActivity() {
                 if (settings.current().setupComplete) setClockIfNeeded() else finish()
             }
         })
+        AmbientDisplayService.sync(this, settings.current().alwaysOnDisplay)
         routeInitial()
     }
 
     override fun onResume() {
         super.onResume()
         applyWindowSettings()
-        lightController.start()
+        if (!ambientMode) lightController.start()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (settings.current().setupComplete) showClock()
+        if (intent.getBooleanExtra(AmbientDisplayService.EXTRA_AMBIENT, false)) showAmbient() else if (settings.current().setupComplete) showClock()
     }
 
     override fun onPause() {
@@ -95,6 +99,10 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (ambientMode && event.actionMasked == MotionEvent.ACTION_UP) {
+            showClock()
+            return true
+        }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 gestureStartX = event.x
@@ -131,7 +139,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun routeInitial() {
-        if (!settings.current().setupComplete) showSetup() else showClock()
+        if (!settings.current().setupComplete) showSetup()
+        else if (intent.getBooleanExtra(AmbientDisplayService.EXTRA_AMBIENT, false)) showAmbient()
+        else showClock()
     }
 
     private fun showSetup() {
@@ -145,6 +155,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showClock() {
+        ambientMode = false
+        setTurnScreenOn(false)
+        window.attributes = window.attributes.apply { screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE }
         screen = "clock"
         clock = DotClockView(this)
         bindClock()
@@ -157,13 +170,14 @@ class MainActivity : ComponentActivity() {
                 contentDescription = Ui.tr("Einstellungen", "Settings")
             },
             FrameLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48), android.view.Gravity.TOP or android.view.Gravity.END).apply {
-                topMargin = Ui.dp(this@MainActivity, 1)
-                marginEnd = Ui.dp(this@MainActivity, 14)
+                topMargin = Ui.dp(this@MainActivity, 18)
+                marginEnd = Ui.dp(this@MainActivity, 272)
             }
         )
         clock.setOnLongClickListener { showSettings(); true }
-        setContentView(root)
+        setPageContent(root, 1f)
         applyWindowSettings()
+        if (settings.current().alwaysOnDisplay) AmbientDisplayService.reportMode(this, ambient = false)
         startDataRefresh()
         maybeCheckForUpdates()
     }
@@ -171,7 +185,7 @@ class MainActivity : ComponentActivity() {
     private fun showApps() {
         screen = "apps"
         refreshJob?.cancel()
-        setContentView(AppDrawerView(this, settings, ::showClock, ::showSettings))
+        setPageContent(AppDrawerView(this, settings, ::showClock, ::showSettings), -1f)
         applyWindowSettings()
     }
 
@@ -194,8 +208,34 @@ class MainActivity : ComponentActivity() {
     private fun showHomeAssistant() {
         screen = "home"
         refreshJob?.cancel()
-        setContentView(HomeAssistantView(this, scope, homeAssistant, settings.current(), secrets.getHomeAssistantToken(), ::showClock, ::showSetup))
+        setPageContent(HomeAssistantView(this, scope, homeAssistant, settings.current(), secrets.getHomeAssistantToken(), ::showClock, ::showSetup), 1f)
         applyWindowSettings()
+    }
+
+    private fun showAmbient() {
+        if (!settings.current().alwaysOnDisplay) {
+            showClock()
+            return
+        }
+        ambientMode = true
+        screen = "ambient"
+        refreshJob?.cancel()
+        lightController.stop()
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
+        setContentView(AmbientClockView(this))
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.attributes = window.attributes.apply { screenBrightness = 0.025f }
+        applyWindowSettings()
+        AmbientDisplayService.reportMode(this, ambient = true)
+        window.decorView.postDelayed({ if (ambientMode) setTurnScreenOn(false) }, 100L)
+    }
+
+    private fun setPageContent(view: View, direction: Float) {
+        setContentView(view)
+        view.alpha = 0f
+        view.translationX = Ui.dp(this, 36) * direction
+        view.animate().alpha(1f).translationX(0f).setDuration(190L).start()
     }
 
     private fun setClockIfNeeded(): Boolean {
@@ -241,7 +281,7 @@ class MainActivity : ComponentActivity() {
         // with an edge swipe and stay visible in setup/settings unless requested.
         val immersive = usesImmersiveLayout()
         window.setSoftInputMode(if (immersive) WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING else WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        if (current.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (ambientMode || current.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, !immersive)
         WindowInsetsControllerCompat(window, window.decorView).apply {
@@ -253,7 +293,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun usesImmersiveLayout() = settings.current().immersive || screen in setOf("clock", "apps", "home")
+    private fun usesImmersiveLayout() = settings.current().immersive || screen in setOf("clock", "apps", "home", "ambient")
+
+    companion object {
+        fun intent(context: Context, ambient: Boolean): Intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(AmbientDisplayService.EXTRA_AMBIENT, ambient)
+        }
+    }
 
     private fun requestHomeRole() {
         val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
@@ -304,8 +351,7 @@ internal object SpatialNavigation {
     fun destination(current: String, deltaX: Float): String = when {
         current == "clock" && deltaX > 0 -> "apps"
         current == "clock" && deltaX < 0 -> "home"
-        current == "apps" && deltaX < 0 -> "clock"
-        current == "home" && deltaX > 0 -> "clock"
+        current in setOf("apps", "home") && deltaX != 0f -> "clock"
         else -> current
     }
 }

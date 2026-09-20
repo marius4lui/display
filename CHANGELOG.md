@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.4 - 2026-09-20
+
+- Add an optional Echo-specific AOD: the first power press shows a dim black clock and the next wake restores the main clock.
+- Keep the AOD local and narrowly permissioned with a foreground screen-state service and wake lock; no overlay or accessibility service is requested.
+- Use all 960 × 480 pixels for the clock, remove the redundant `DISPLAY` and location header, and move Settings inside the primary card.
+- Add short 190 ms directional page transitions suited to the compact panel.
+- Return from Apps and Home Assistant with either horizontal swipe direction instead of trapping the outward edge.
+- Add deterministic power-state and navigation regression tests plus on-device Echo Show 5 verification.
+
 ## 0.1.3 - 2026-09-20
 
 - Replace the three-button dock with a full-screen, distance-readable clock surface.
