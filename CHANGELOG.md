@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.3 - 2026-09-20
+
+- Replace the three-button dock with a full-screen, distance-readable clock surface.
+- Add spatial navigation: Apps sits left of the clock, Home Assistant sits right, and a reverse swipe returns to the clock.
+- Keep horizontal page gestures directional without stealing vertical app-drawer scrolling or wrapping at the outer edges.
+- Enlarge the app drawer to four columns and Home Assistant controls to two columns.
+- Reflow settings into one compact header so three larger control rows remain visible.
+- Use immersive system-bar handling for the three ambient launcher pages and keep setup/settings safely inset.
+- Give debug builds a separate application ID for non-destructive on-device testing.
+
 ## 0.1.2 - 2026-09-19
 
 - Redesign around a fine 7 × 11 dot-matrix clock, white rounded modules, calendar and analog dial.

@@ -18,7 +18,7 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * The face is drawn in a 960 x 392 design space. No animation loop: a minute tick,
+ * The face is drawn in the Echo Show's 960 x 421 safe design space. No animation loop: a minute tick,
  * or a one-second tick only when explicitly enabled. All glyphs are original.
  */
 class DotClockView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : View(context, attrs) {
@@ -78,77 +78,71 @@ class DotClockView @JvmOverloads constructor(context: Context, attrs: AttributeS
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val now = ZonedDateTime.now()
-        val scale = min(width / 960f, height / 392f)
+        val scale = min(width / 960f, height / 421f)
         canvas.save()
-        canvas.translate((width - 960 * scale) / 2f, (height - 392 * scale) / 2f)
+        canvas.translate((width - 960 * scale) / 2f, (height - 421 * scale) / 2f)
         canvas.scale(scale, scale)
 
-        // Quiet header with a dotted wordmark and a single red registration point.
-        DotMatrix.draw(canvas, "DISPLAY", 30f, 21f, 3.2f, Ui.INK, paint)
+        // The time owns the safe area and remains readable from across the room.
+        DotMatrix.draw(canvas, "DISPLAY", 28f, 18f, 3.5f, Ui.INK, paint)
         fill(Ui.RED)
-        canvas.drawCircle(189f, 31f, 4f, paint)
-        text(canvas, "TIME, SIMPLIFIED.", 219f, 36f, 11f, Ui.MUTED, mono, spacing = .08f)
-        text(canvas, "LOCAL / " + now.format(DateTimeFormatter.ofPattern("O")), 926f, 36f, 11f, Ui.MUTED, mono, Paint.Align.RIGHT)
+        canvas.drawCircle(202f, 30f, 4.5f, paint)
+        text(canvas, now.zone.id.substringAfterLast('/').replace('_', ' '), 226f, 35f, 14f, Ui.MUTED, sans)
 
-        // Main clock tile. Thin, high-density dots replace the old oversized 3-column digits.
-        card(canvas, 24f, 68f, 642f, 368f)
-        text(canvas, Ui.tr("LOKALZEIT", "LOCAL TIME"), 49f, 98f, 11f, Ui.MUTED, mono, spacing = .12f)
+        card(canvas, 24f, 62f, 700f, 397f)
+        text(canvas, Ui.tr("LOKALZEIT", "LOCAL TIME"), 52f, 96f, 14f, Ui.MUTED, mono, spacing = .1f)
         fill(Ui.RED)
-        canvas.drawCircle(611f, 94f, 4f, paint)
+        canvas.drawCircle(668f, 91f, 5f, paint)
         val hour = if (settings.use24Hour) now.hour else (now.hour + 11) % 12 + 1
         val formatted = "%02d:%02d".format(Locale.ROOT, hour, now.minute)
-        val cell = 15.3f
+        val cell = 18f
         val digitWidth = DotMatrix.clockWidth(formatted, cell)
-        DotMatrix.drawClock(canvas, formatted, 333f - digitWidth / 2f, 128f, cell, Ui.INK, paint)
+        DotMatrix.drawClock(canvas, formatted, 362f - digitWidth / 2f, 112f, cell, Ui.INK, paint)
 
         if (settings.showSeconds) {
-            text(canvas, "%02d".format(now.second), 604f, 316f, 22f, Ui.RED, mono, Paint.Align.RIGHT)
-            text(canvas, Ui.tr("SEK", "SEC"), 604f, 339f, 9f, Ui.MUTED, mono, Paint.Align.RIGHT)
+            text(canvas, "%02d".format(now.second), 660f, 346f, 27f, Ui.RED, mono, Paint.Align.RIGHT)
+            text(canvas, Ui.tr("SEK", "SEC"), 660f, 368f, 11f, Ui.MUTED, mono, Paint.Align.RIGHT)
         } else {
             val label = if (settings.use24Hour) "24H" else if (now.hour < 12) "AM" else "PM"
-            text(canvas, label, 610f, 338f, 10f, Ui.MUTED, mono, Paint.Align.RIGHT)
+            text(canvas, label, 668f, 369f, 12f, Ui.MUTED, mono, Paint.Align.RIGHT)
         }
 
         // One dot per hour, the current hour is the red marker.
         for (i in 0..23) {
             fill(when { i == now.hour -> Ui.RED; i < now.hour -> Ui.INK; else -> Ui.LINE })
-            canvas.drawCircle(52f + i * 10.5f, 336f, if (i == now.hour) 3.2f else 2f, paint)
+            canvas.drawCircle(53f + i * 13f, 365f, if (i == now.hour) 3.8f else 2.5f, paint)
         }
-        text(canvas, Ui.tr("DER TAG IN PUNKTEN", "THE DAY IN DOTS"), 51f, 355f, 8f, Ui.MUTED, mono, spacing = .05f)
 
-        // Right-hand modules align with the clock tile.
-        card(canvas, 656f, 68f, 936f, 211f)
+        card(canvas, 714f, 62f, 936f, 226f)
         if (settings.showDate) {
             val dayName = now.format(DateTimeFormatter.ofPattern("EEEE", Locale.getDefault())).uppercase(Locale.getDefault())
-            text(canvas, dayName, 678f, 97f, 11f, Ui.MUTED, mono, spacing = .06f)
-            text(canvas, now.dayOfMonth.toString().padStart(2, '0'), 675f, 178f, 66f, Ui.INK, sans)
-            text(canvas, now.format(DateTimeFormatter.ofPattern("MMM", Locale.getDefault())).uppercase(Locale.getDefault()), 778f, 141f, 13f, Ui.INK, mono)
-            text(canvas, now.year.toString(), 778f, 162f, 11f, Ui.MUTED, mono)
+            text(canvas, dayName, 736f, 94f, 13f, Ui.MUTED, mono, spacing = .04f)
+            text(canvas, now.dayOfMonth.toString().padStart(2, '0'), 733f, 190f, 76f, Ui.INK, sans)
+            text(canvas, now.format(DateTimeFormatter.ofPattern("MMM", Locale.getDefault())).uppercase(Locale.getDefault()), 842f, 145f, 15f, Ui.INK, mono)
+            text(canvas, now.year.toString(), 842f, 169f, 13f, Ui.MUTED, mono)
             for (i in 0..6) {
                 fill(if (i + 1 == now.dayOfWeek.value) Ui.RED else Ui.LINE)
-                canvas.drawCircle(783f + i * 16f, 183f, 3f, paint)
+                canvas.drawCircle(810f + i * 17f, 204f, 3.4f, paint)
             }
         } else {
-            dial(canvas, 728f, 140f, 50f, now)
-            text(canvas, Ui.tr("DEIN MOMENT.", "YOUR MOMENT."), 800f, 135f, 11f, Ui.INK, mono)
-            text(canvas, Ui.tr("Ganz in Ruhe.", "Take it slow."), 800f, 158f, 12f, Ui.MUTED)
+            dial(canvas, 782f, 145f, 55f, now)
+            text(canvas, if (settings.use24Hour) "24H" else if (now.hour < 12) "AM" else "PM", 860f, 151f, 16f, Ui.INK, mono)
         }
-        card(canvas, 656f, 225f, 936f, 368f)
+        card(canvas, 714f, 240f, 936f, 397f)
         if (settings.weatherEnabled) {
-            text(canvas, Ui.tr("DRAUSSEN", "OUTSIDE"), 678f, 252f, 11f, Ui.MUTED, mono, spacing = .08f)
-            sun(canvas, 704f, 299f, 17f)
+            text(canvas, Ui.tr("DRAUSSEN", "OUTSIDE"), 736f, 272f, 13f, Ui.MUTED, mono, spacing = .06f)
+            sun(canvas, 762f, 324f, 19f)
             val value = weatherLine.substringBefore("  ").ifBlank { "—" }
-            text(canvas, value, 744f, 313f, 34f, Ui.INK, sans)
-            fitText(canvas, settings.weatherPlace.ifBlank { Ui.tr("Wetter wird geladen", "Loading weather") }, 678f, 345f, 230f, 12f)
+            text(canvas, value, 800f, 340f, 38f, Ui.INK, sans)
+            fitText(canvas, settings.weatherPlace.ifBlank { Ui.tr("Wetter wird geladen", "Loading weather") }, 736f, 375f, 180f, 14f)
         } else if (settings.homeAssistantEnabled) {
-            text(canvas, "HOME ASSISTANT", 678f, 252f, 11f, Ui.MUTED, mono, spacing = .04f)
-            DotMatrix.draw(canvas, "HOME", 679f, 274f, 4f, Ui.INK, paint)
-            fitText(canvas, homeLine.ifBlank { Ui.tr("Werte werden geladen", "Loading entities") }, 678f, 345f, 230f, 12f)
+            text(canvas, "HOME ASSISTANT", 736f, 272f, 12f, Ui.MUTED, mono, spacing = .03f)
+            DotMatrix.draw(canvas, "HOME", 736f, 294f, 4.8f, Ui.INK, paint)
+            fitText(canvas, homeLine.ifBlank { Ui.tr("Werte werden geladen", "Loading entities") }, 736f, 375f, 180f, 14f)
         } else {
-            dial(canvas, 726f, 297f, 50f, now)
-            text(canvas, Ui.tr("IM HIER", "RIGHT HERE."), 797f, 291f, 12f, Ui.INK, mono)
-            text(canvas, Ui.tr("UND JETZT.", "RIGHT NOW."), 797f, 310f, 12f, Ui.INK, mono)
-            text(canvas, now.zone.id.substringAfterLast('/').replace('_', ' '), 797f, 337f, 11f, Ui.MUTED)
+            dial(canvas, 786f, 319f, 55f, now)
+            text(canvas, Ui.tr("JETZT", "NOW"), 861f, 314f, 15f, Ui.INK, mono)
+            text(canvas, now.format(DateTimeFormatter.ofPattern("O")), 861f, 339f, 13f, Ui.MUTED, mono)
         }
         canvas.restore()
         contentDescription = formatted + if (settings.showSeconds) ":%02d".format(now.second) else ""

@@ -5,16 +5,19 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
-import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.WindowInsets
-import android.widget.LinearLayout
+import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.marius4lui.display.clock.DotClockView
 import com.marius4lui.display.display.AmbientLightController
 import com.marius4lui.display.homeassistant.HomeAssistantClient
@@ -47,6 +50,10 @@ class MainActivity : ComponentActivity() {
     private var homeText = ""
     private var refreshJob: Job? = null
     private var screen = "clock"
+    private var gestureStartX = 0f
+    private var gestureStartY = 0f
+    private var gestureTracking = false
+    private val swipeDistance by lazy { ViewConfiguration.get(this).scaledTouchSlop * 8f }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,7 +62,7 @@ class MainActivity : ComponentActivity() {
         // Android 11 does not resize fullscreen windows for the keyboard. Reserve
         // IME space explicitly so the setup ScrollView and fixed actions remain usable.
         findViewById<View>(android.R.id.content).setOnApplyWindowInsetsListener { content, insets ->
-            val bottom = if (settings.current().immersive) insets.getInsets(WindowInsets.Type.ime()).bottom else 0
+            val bottom = if (usesImmersiveLayout()) insets.getInsets(WindowInsets.Type.ime()).bottom else 0
             if (content.paddingBottom != bottom) content.setPadding(0, 0, 0, bottom)
             insets
         }
@@ -87,6 +94,35 @@ class MainActivity : ComponentActivity() {
         super.onPause()
     }
 
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                gestureStartX = event.x
+                gestureStartY = event.y
+                gestureTracking = screen in setOf("clock", "apps", "home")
+            }
+            MotionEvent.ACTION_UP -> {
+                if (gestureTracking) {
+                    val dx = event.x - gestureStartX
+                    val dy = event.y - gestureStartY
+                    gestureTracking = false
+                    if (kotlin.math.abs(dx) >= swipeDistance &&
+                        kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.25f
+                    ) {
+                        when (SpatialNavigation.destination(screen, dx)) {
+                            "apps" -> showApps()
+                            "clock" -> showClock()
+                            "home" -> showHomeAssistant()
+                        }
+                        return true
+                    }
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> gestureTracking = false
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
     override fun onDestroy() {
         refreshJob?.cancel()
         homeAssistant.disconnect()
@@ -105,53 +141,27 @@ class MainActivity : ComponentActivity() {
             requestHomeRole()
             showClock()
         })
+        applyWindowSettings()
     }
 
     private fun showClock() {
         screen = "clock"
         clock = DotClockView(this)
         bindClock()
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        val root = FrameLayout(this).apply {
             setBackgroundColor(Ui.PAPER)
-            addView(clock, LinearLayout.LayoutParams(-1, 0, 1f))
+            addView(clock, FrameLayout.LayoutParams(-1, -1))
         }
-        val dock = LinearLayout(this).apply {
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            setPadding(Ui.dp(this@MainActivity, 20), 0, Ui.dp(this@MainActivity, 20), Ui.dp(this@MainActivity, 12))
-        }
-        val actions = listOf(
-            Triple(Ui.tr("Apps", "Apps"), "apps", ::showApps),
-            Triple("Home", "home", ::showHomeAssistant),
-            Triple(Ui.tr("Einstellungen", "Settings"), "settings", ::showSettings)
-        )
-        actions.forEachIndexed { i, (label, glyph, action) ->
-            dock.addView(Ui.iconButton(this, label, glyph, action), LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f).apply {
-                if (i > 0) marginStart = Ui.dp(this@MainActivity, 10)
-            })
-        }
-        root.addView(dock, LinearLayout.LayoutParams(-1, Ui.dp(this, 64)))
-        val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(e: MotionEvent): Boolean = true
-            override fun onLongPress(e: MotionEvent) = showSettings()
-            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-                if (e1 == null) {
-                    return false
-                }
-                val dx = e2.x - e1.x
-                val dy = e2.y - e1.y
-                if (kotlin.math.abs(dy) > kotlin.math.abs(dx) && kotlin.math.abs(dy) > 80) {
-                    if (dy < 0) showApps() else showSettings()
-                    return true
-                }
-                if (kotlin.math.abs(dx) > 100) {
-                    showHomeAssistant()
-                    return true
-                }
-                return false
+        root.addView(
+            Ui.iconButton(this, "", "settings", ::showSettings).apply {
+                contentDescription = Ui.tr("Einstellungen", "Settings")
+            },
+            FrameLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48), android.view.Gravity.TOP or android.view.Gravity.END).apply {
+                topMargin = Ui.dp(this@MainActivity, 1)
+                marginEnd = Ui.dp(this@MainActivity, 14)
             }
-        })
-        clock.setOnTouchListener { _, event -> detector.onTouchEvent(event) }
+        )
+        clock.setOnLongClickListener { showSettings(); true }
         setContentView(root)
         applyWindowSettings()
         startDataRefresh()
@@ -162,6 +172,7 @@ class MainActivity : ComponentActivity() {
         screen = "apps"
         refreshJob?.cancel()
         setContentView(AppDrawerView(this, settings, ::showClock, ::showSettings))
+        applyWindowSettings()
     }
 
     private fun showSettings() {
@@ -177,12 +188,14 @@ class MainActivity : ComponentActivity() {
                 ::checkForUpdates,
             )
         )
+        applyWindowSettings()
     }
 
     private fun showHomeAssistant() {
         screen = "home"
         refreshJob?.cancel()
         setContentView(HomeAssistantView(this, scope, homeAssistant, settings.current(), secrets.getHomeAssistantToken(), ::showClock, ::showSetup))
+        applyWindowSettings()
     }
 
     private fun setClockIfNeeded(): Boolean {
@@ -223,14 +236,24 @@ class MainActivity : ComponentActivity() {
 
     private fun applyWindowSettings() {
         val current = settings.current()
-        window.setSoftInputMode(if (current.immersive) WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING else WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        // The three launcher pages are the ambient smart-display surface, not a
+        // conventional app. Keep them edge-to-edge; system bars remain available
+        // with an edge swipe and stay visible in setup/settings unless requested.
+        val immersive = usesImmersiveLayout()
+        window.setSoftInputMode(if (immersive) WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING else WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         if (current.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        val lightBars = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-        window.decorView.systemUiVisibility = if (current.immersive) {
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        } else View.SYSTEM_UI_FLAG_LAYOUT_STABLE or lightBars
+        WindowCompat.setDecorFitsSystemWindows(window, !immersive)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = true
+            isAppearanceLightNavigationBars = true
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (immersive) hide(WindowInsetsCompat.Type.systemBars())
+            else show(WindowInsetsCompat.Type.systemBars())
+        }
     }
+
+    private fun usesImmersiveLayout() = settings.current().immersive || screen in setOf("clock", "apps", "home")
 
     private fun requestHomeRole() {
         val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
@@ -274,5 +297,15 @@ class MainActivity : ComponentActivity() {
                     if (release != null) Toast.makeText(this@MainActivity, "Display ${release.tag} is available", Toast.LENGTH_LONG).show()
                 }
         }
+    }
+}
+
+internal object SpatialNavigation {
+    fun destination(current: String, deltaX: Float): String = when {
+        current == "clock" && deltaX > 0 -> "apps"
+        current == "clock" && deltaX < 0 -> "home"
+        current == "apps" && deltaX < 0 -> "clock"
+        current == "home" && deltaX > 0 -> "clock"
+        else -> current
     }
 }

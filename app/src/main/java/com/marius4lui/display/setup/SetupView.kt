@@ -194,7 +194,7 @@ class SetupView(
 
     private fun finish() {
         heading("06", "READY", "Choose Display as the Home app and select Always in the Android dialog.")
-        content.addView(infoCard("GESTURES", "Swipe up  Apps\nSwipe down  Settings\nSwipe sideways  Home Assistant"))
+        content.addView(infoCard("GESTURES", "Swipe right  Apps\nSwipe left  Home Assistant\nReverse swipe  Clock\nGear  Settings"))
         setNavigation("CHOOSE LAUNCHER") {
             settings.update { it.copy(setupComplete = true) }
             onComplete()

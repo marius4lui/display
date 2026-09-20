@@ -3,7 +3,6 @@ package com.marius4lui.display.settings
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
-import android.graphics.Typeface
 import android.provider.Settings
 import android.view.Gravity
 import android.widget.LinearLayout
@@ -26,27 +25,26 @@ class SettingsView(
     private val onCheckUpdate: (TextView) -> Unit,
 ) : LinearLayout(context) {
     private val content = Ui.column(context)
-    private val tabs = LinearLayout(context).apply { orientation = VERTICAL }
+    private val tabs = LinearLayout(context).apply { orientation = HORIZONTAL }
     private val scroll = ScrollView(context).apply { isFillViewport = true; addView(content) }
     private var selected = 0
     private val names = listOf(Ui.tr("Uhr", "Clock"), Ui.tr("Display", "Display"), "Launcher", Ui.tr("System", "System"))
 
     init {
-        orientation = HORIZONTAL
+        orientation = VERTICAL
+        setPadding(Ui.dp(context, 20), Ui.dp(context, 10), Ui.dp(context, 20), Ui.dp(context, 10))
         setBackgroundColor(Ui.PAPER)
-        val rail = LinearLayout(context).apply {
-            orientation = VERTICAL
-            setPadding(Ui.dp(context, 22), Ui.dp(context, 14), Ui.dp(context, 14), Ui.dp(context, 14))
+        val header = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-        rail.addView(DotLabelView(context, "SETTINGS"), LayoutParams(-1, Ui.dp(context, 40)))
-        rail.addView(Ui.body(context, "DISPLAY / 01").apply {
-            typeface = Typeface.MONOSPACE; textSize = 10f; setTextColor(Ui.RED)
+        header.addView(Ui.iconButton(context, Ui.tr("Uhr", "Clock"), "back", onBack), LayoutParams(Ui.dp(context, 105), Ui.dp(context, 52)))
+        header.addView(DotLabelView(context, "SETTINGS"), LayoutParams(Ui.dp(context, 180), Ui.dp(context, 52)).apply {
+            marginStart = Ui.dp(context, 16)
         })
-        Ui.addSpace(rail, 20)
-        rail.addView(tabs, LayoutParams(-1, 0, 1f))
-        rail.addView(Ui.iconButton(context, Ui.tr("Zur Uhr", "Clock"), "back", onBack), LayoutParams(-1, Ui.dp(context, 48)))
-        addView(rail, LayoutParams(Ui.dp(context, 210), -1))
-        addView(scroll, LayoutParams(0, -1, 1f))
+        header.addView(tabs, LayoutParams(0, Ui.dp(context, 52), 1f).apply { marginStart = Ui.dp(context, 10) })
+        addView(header)
+        addView(scroll, LayoutParams(-1, 0, 1f))
         select(0)
     }
 
@@ -54,18 +52,19 @@ class SettingsView(
         selected = index
         tabs.removeAllViews()
         names.forEachIndexed { i, name ->
-            val label = (if (i == selected) "●  " else "   ") + name
+            val label = (if (i == selected) "● " else "") + name
             tabs.addView(Ui.button(context, label) { select(i) }.apply {
-                gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                gravity = Gravity.CENTER
+                textSize = 14f
+                setPadding(Ui.dp(context, 4), 0, Ui.dp(context, 4), 0)
                 setTextColor(if (i == selected) Ui.RED else Ui.MUTED)
                 if (i != selected) background = Ui.panelDrawable(context, Ui.PAPER)
-            }, LayoutParams(-1, Ui.dp(context, 48)).apply { bottomMargin = Ui.dp(context, 4) })
+            }, LayoutParams(0, Ui.dp(context, 50), 1f).apply {
+                if (i > 0) marginStart = Ui.dp(context, 2)
+            })
         }
         content.removeAllViews()
         scroll.scrollTo(0, 0)
-        content.addView(Ui.title(context, names[index]))
-        content.addView(Ui.body(context, Ui.tr("Dein Display. Dein Rhythmus.", "Your display. Your rhythm.")))
-        Ui.addSpace(content, 18)
         val current = store.current()
         when (index) {
             0 -> {
@@ -127,8 +126,8 @@ class SettingsView(
         val row = card().apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; minimumHeight = Ui.dp(context, 72) }
         val text = LinearLayout(context).apply {
             orientation = VERTICAL
-            addView(Ui.title(context, title).apply { textSize = 16f })
-            addView(Ui.body(context, subtitle).apply { textSize = 11f })
+            addView(Ui.title(context, title).apply { textSize = 18f })
+            addView(Ui.body(context, subtitle).apply { textSize = 13f })
         }
         row.addView(text, LayoutParams(0, -2, 1f))
         val control = Switch(context).apply {
@@ -169,8 +168,8 @@ class SettingsView(
     private fun action(title: String, subtitle: String, action: () -> Unit) {
         card().apply {
             minimumHeight = Ui.dp(context, 74)
-            addView(Ui.title(context, "$title  →").apply { textSize = 16f })
-            addView(Ui.body(context, subtitle).apply { textSize = 12f })
+            addView(Ui.title(context, "$title  →").apply { textSize = 18f })
+            addView(Ui.body(context, subtitle).apply { textSize = 13f })
             isFocusable = true
             setOnClickListener { action() }
         }

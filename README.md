@@ -4,9 +4,9 @@ Display is a tiny, Nothing-inspired clock and Android launcher built specificall
 
 It replaces a conventional home screen with a readable dot-matrix clock, an ambient-light-aware display, weather, Home Assistant controls, and a fast app drawer. Display does not contain Nothing branding or proprietary Nothing assets.
 
-![Display 0.1.2 on Echo Show 5](docs/screenshots/clock.png)
+![Display on Echo Show 5](docs/screenshots/clock.png)
 
-See the [design system](docs/DESIGN.md) and [0.1.2 verification notes](docs/QA-0.1.2.md).
+See the [design system](docs/DESIGN.md) and [0.1.3 verification notes](docs/QA-0.1.3.md).
 
 ## Target
 
@@ -19,12 +19,12 @@ Other Android 11+ devices may work, but are not currently supported.
 
 ## Features
 
-- Original 7 × 11 dot-matrix clock, calendar card and analog dial, drawn with Canvas
+- Full-screen 7 × 11 dot-matrix clock, calendar card and analog dial, drawn with Canvas
 - White-only design: soft gray canvas, white rounded modules, monochrome icons and restrained red accents
 - 12/24-hour time, optional seconds and date; minute-aligned redraws by default
 - Ambient light sensor brightness with smoothing and hysteresis
 - Keep-awake and optional immersive mode
-- Android Home role, searchable app grid, hidden apps, and safe Quickstep fallback
+- Spatial swipe navigation, four-column app grid, Android Home role, hidden apps, and safe Quickstep fallback
 - Open-Meteo weather without an API key and with an offline cache
 - Home Assistant sensors, switches, lights, and climate entities
 - Keystore-encrypted Home Assistant token

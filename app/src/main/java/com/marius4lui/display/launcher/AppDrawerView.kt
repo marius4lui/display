@@ -25,9 +25,9 @@ class AppDrawerView(
     private val onSettings: () -> Unit,
 ) : LinearLayout(context) {
     private val repository = InstalledAppsRepository(context)
-    private val grid = GridLayout(context).apply { columnCount = 6 }
+    private val grid = GridLayout(context).apply { columnCount = 4 }
     private var apps = emptyList<InstalledApp>()
-    private val searchStatus = Ui.body(context, "").apply { textSize = 11f }
+    private val searchStatus = Ui.body(context, "").apply { textSize = 13f }
     private var query = ""
 
     init {
@@ -40,7 +40,7 @@ class AppDrawerView(
         header.addView(DotLabelView(context, "APPS"), LayoutParams(Ui.dp(context, 110), Ui.dp(context, 48)).apply { marginStart = Ui.dp(context, 20) })
         val search = EditText(context).apply {
             hint = Ui.tr("Apps suchen", "Search apps")
-            textSize = 14f
+            textSize = 16f
             setHintTextColor(Ui.MUTED)
             setTextColor(Ui.INK)
             setSingleLine(true)
@@ -74,7 +74,7 @@ class AppDrawerView(
         matches.forEach { app ->
             grid.addView(appTile(app), GridLayout.LayoutParams().apply {
                 width = 0
-                height = Ui.dp(context, 124)
+                height = Ui.dp(context, 132)
                 columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
                 setMargins(Ui.dp(context, 4), Ui.dp(context, 5), Ui.dp(context, 4), Ui.dp(context, 5))
             })
@@ -84,23 +84,23 @@ class AppDrawerView(
     private fun appTile(app: InstalledApp): View = LinearLayout(context).apply {
         orientation = VERTICAL
         gravity = Gravity.CENTER
-        setPadding(Ui.dp(context, 4), Ui.dp(context, 8), Ui.dp(context, 4), Ui.dp(context, 4))
+        setPadding(Ui.dp(context, 6), Ui.dp(context, 8), Ui.dp(context, 6), Ui.dp(context, 4))
         background = Ui.panelDrawable(context, Ui.PAPER)
         addView(ImageView(context).apply {
             setImageDrawable(app.icon)
             colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
             background = Ui.panelDrawable(context, Ui.SURFACE, Ui.SURFACE, 50)
-            setPadding(Ui.dp(context, 13), Ui.dp(context, 13), Ui.dp(context, 13), Ui.dp(context, 13))
+            setPadding(Ui.dp(context, 14), Ui.dp(context, 14), Ui.dp(context, 14), Ui.dp(context, 14))
             contentDescription = app.label
-        }, LayoutParams(Ui.dp(context, 72), Ui.dp(context, 72)))
+        }, LayoutParams(Ui.dp(context, 78), Ui.dp(context, 78)))
         addView(TextView(context).apply {
             text = (if (app.packageName in settings.current().favoritePackages) "• " else "") + app.label
             setTextColor(Ui.INK)
-            textSize = 12f
-            maxLines = 1
+            textSize = 15f
+            maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
             gravity = Gravity.CENTER
-        }, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(context, 32)))
+        }, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(context, 42)))
         setOnClickListener { repository.launch(app) }
         setOnLongClickListener { anchor ->
             val favorite = app.packageName in settings.current().favoritePackages

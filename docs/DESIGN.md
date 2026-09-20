@@ -23,12 +23,12 @@ The time uses a fixed-width 7 × 11 dot grid. Header lettering uses a separate 5
 
 ## Layout and interaction
 
-- Clock: fit a 960 × 392 drawing area above a three-button navigation dock. No stretching or clipping on the target 960 × 480 landscape panel.
+- Clock: use the complete 960 × 421 safe drawing area, or the full 960 × 480 panel when the ambient launcher surface hides system bars. No permanent navigation dock.
 - Date enabled: calendar with weekday, day, month, year and seven day markers. Date disabled: an analog module replaces it.
 - Lower-right module: weather when enabled, otherwise a Home Assistant summary when enabled, otherwise an analog dial. Network values are not fabricated.
 - Setup: chapter rail plus independently scrollable content; Back and Next remain outside the scroll area. Android resizes for the keyboard.
 - Settings: four categories, scrollable cards and immediate persistence. Brightness sliders respect the saved minimum/maximum bounds.
-- Navigation: dock buttons, existing swipes and Android Back all return to the expected screens. The system Home action returns to the clock.
+- Navigation: Apps sits left of the clock and Home Assistant sits right. A reverse swipe returns to the clock, outer edges do not wrap, vertical scrolling does not change pages, and Android Back returns to the clock. Settings remains a deliberate gear/back flow. The system Home action returns to the clock.
 
 ## Rendering constraints
 

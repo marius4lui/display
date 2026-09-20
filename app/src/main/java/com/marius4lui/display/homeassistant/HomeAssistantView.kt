@@ -21,8 +21,8 @@ class HomeAssistantView(
     private val onBack: () -> Unit,
     private val onConfigure: () -> Unit,
 ) : LinearLayout(context) {
-    private val grid = GridLayout(context).apply { columnCount = 4 }
-    private val status = Ui.body(context, "Loading…")
+    private val grid = GridLayout(context).apply { columnCount = 2 }
+    private val status = Ui.body(context, "Loading…").apply { textSize = 14f }
 
     init {
         orientation = VERTICAL
@@ -56,7 +56,7 @@ class HomeAssistantView(
                     background = Ui.panelDrawable(context, Ui.PAPER)
                 }, LayoutParams(Ui.dp(context, 230), Ui.dp(context, 48)))
             }
-            grid.addView(empty, GridLayout.LayoutParams(GridLayout.spec(0), GridLayout.spec(0, 4, 1f)).apply {
+            grid.addView(empty, GridLayout.LayoutParams(GridLayout.spec(0), GridLayout.spec(0, 2, 1f)).apply {
                 width = 0
                 height = Ui.dp(context, 230)
                 topMargin = Ui.dp(context, 12)
@@ -89,14 +89,14 @@ class HomeAssistantView(
                 addView(TextView(context).apply {
                     text = entity.friendlyName
                     setTextColor(Ui.INK)
-                    textSize = 14f
+                    textSize = 17f
                     gravity = Gravity.CENTER
                     maxLines = 2
                 })
                 addView(TextView(context).apply {
                     text = entity.state + (entity.unit?.let { " $it" } ?: "")
                     setTextColor(Ui.RED)
-                    textSize = 18f
+                    textSize = 24f
                     gravity = Gravity.CENTER
                 })
                 if (domain == "switch" || domain == "light") {
@@ -116,7 +116,7 @@ class HomeAssistantView(
             }
             grid.addView(tile, GridLayout.LayoutParams().apply {
                 width = 0
-                height = Ui.dp(context, 150)
+                height = Ui.dp(context, 160)
                 columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
                 setMargins(Ui.dp(context, 5), Ui.dp(context, 5), Ui.dp(context, 5), Ui.dp(context, 5))
             })
